@@ -1,10 +1,17 @@
-# Lichess to Chessable PGN Converter
+# Chessable Course Builder
 
-This tool helps convert Lichess study PGNs into separate Chessable-friendly PGN files, with each top-level variation becoming its own chapter.
+This toolkit provides two ways to create and manage chess repertoires for Chessable:
+
+1. **GUI Chess Board Editor**: Build your repertoire locally with an interactive chess board
+2. **PGN Converter**: Convert Lichess studies into Chessable-ready PGN files
 
 ## Overview
 
-When creating opening repertoires, Lichess is great for building and studying complex variations, but Chessable works better with separate PGN chapters for each line. This tool takes a PGN exported from Lichess and automatically splits it into separate PGN files for each major variation, making it easy to import into Chessable as separate chapters.
+When creating opening repertoires, you need a way to organize complex variations into separate chapters for Chessable. This toolkit offers a complete workflow:
+
+- Use the built-in **Chess Board GUI** to create and edit your repertoire directly
+- Or use **Lichess** to build your repertoire and then convert it with this tool
+- Export to separate PGN files optimized for Chessable chapters
 
 ## Features
 
@@ -17,12 +24,31 @@ When creating opening repertoires, Lichess is great for building and studying co
 ## Requirements
 
 - Python 3.6 or higher
-- python-chess package
+- Required packages (installed automatically):
+  - python-chess: Chess library for move validation and PGN handling
+  - pillow: Image processing for the GUI
+  - cairosvg: SVG rendering for chess pieces
 
 ## Installation
 
-1. Clone this repository or download the script
-2. Install the required package:
+### Easy Setup (macOS)
+
+1. Clone this repository or download the scripts
+2. Run the setup script:
+
+```
+./setup_mac.sh
+```
+
+This will install all required dependencies including Cairo libraries needed for the GUI.
+
+### Manual Setup
+
+1. Clone this repository or download the scripts
+2. Install Cairo dependencies:
+   - macOS: `brew install cairo pango`
+   - Linux: `apt-get install libcairo2-dev pkg-config python3-dev`
+3. Install the required Python packages:
 
 ```
 pip install -r requirements.txt
@@ -30,7 +56,23 @@ pip install -r requirements.txt
 
 ## Usage
 
-Basic usage:
+### Interactive GUI Editor
+
+Start the GUI application to create and edit your chess repertoire:
+
+```
+./run_gui.sh
+```
+
+Or manually:
+
+```
+python chessable_gui.py
+```
+
+### PGN Converter (Command Line)
+
+Convert a Lichess PGN to Chessable chapters:
 
 ```
 python split_pgn_for_chessable.py your_lichess_study.pgn
@@ -93,6 +135,36 @@ To use the split marker in Lichess:
 2. Export the PGN from Lichess
 3. Run this script on the PGN
 4. Import the generated PGN files into Chessable as separate chapters
+
+## GUI Features
+
+The Chess Board GUI provides an intuitive way to build and manage your chess repertoire:
+
+### Interactive Chess Board
+- Click to select and move pieces
+- Highlighted legal moves
+- Support for piece promotion
+- Flip board orientation
+
+### Variation Management
+- Create and navigate variations easily
+- Visual move tree showing all lines
+- Add comments to any position
+- Set chapter names and metadata
+
+### Import/Export
+- Load existing PGN files (including from Lichess)
+- Save your work as standard PGN
+- Export chapters directly to Chessable-ready format
+
+### Workflow with the GUI
+
+1. Start the GUI with `./run_gui.sh`
+2. Create your repertoire by making moves on the board
+3. Add variations by navigating back to a position and making a different move
+4. Add comments to explain the ideas behind moves
+5. Set chapter and study names in the interface
+6. Export for Chessable when ready
 
 ## Limitations
 

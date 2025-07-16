@@ -102,6 +102,7 @@ class ChessboardGUI(tk.Frame):
         self.engine_path = None
         self.analysis_running = False
         self.analysis_thread = None
+        self.board_flipped = False  # Track board orientation
         self.setup_board()
         self.load_piece_images()
         self.create_board_widgets()
@@ -142,21 +143,53 @@ class ChessboardGUI(tk.Frame):
         self.board_frame = tk.Frame(self)
         self.board_frame.pack(side=tk.LEFT, padx=20, pady=20)
         
+        self.create_squares()
+        self.create_board_labels()
+                
+    def create_squares(self):
+        """Create the chess board squares based on current orientation."""
         self.squares = {}
         for row in range(8):
             for col in range(8):
+                # Determine square color (light or dark)
                 color = 'light' if (row + col) % 2 == 0 else 'dark'
-                square = ChessSquare(self.board_frame, self.square_size, 7-row, col, color)
-                square.grid(row=row, column=col)
-                square.bind("<Button-1>", lambda e, r=7-row, c=col: self.on_square_click(r, c))
-                self.squares[(7-row, col)] = square
+                
+                # Calculate display positions based on board orientation
+                if self.board_flipped:
+                    display_row, display_col = row, 7 - col
+                    chess_row, chess_col = row, col
+                else:
+                    display_row, display_col = row, col
+                    chess_row, chess_col = 7 - row, col
+                
+                # Create the square
+                square = ChessSquare(self.board_frame, self.square_size, chess_row, chess_col, color)
+                square.grid(row=display_row, column=display_col)
+                
+                # Bind click event - pass the chess coordinate (not display coordinate)
+                square.bind("<Button-1>", lambda e, r=chess_row, c=chess_col: self.on_square_click(r, c))
+                
+                # Store the square with its chess coordinates (not display coordinates)
+                self.squares[(chess_row, chess_col)] = square
+    
+    def create_board_labels(self):
+        """Create the rank and file labels based on current orientation."""
+        # Remove any existing labels
+        for widget in self.board_frame.winfo_children():
+            if isinstance(widget, tk.Label):
+                widget.destroy()
                 
         # Add rank and file labels
         for i in range(8):
-            # Rank labels
+            # Rank labels (1-8)
             tk.Label(self.board_frame, text=str(i+1)).grid(row=7-i, column=8)
-            # File labels
-            tk.Label(self.board_frame, text=chr(97+i)).grid(row=8, column=i)
+            
+            # File labels (a-h)
+            if self.board_flipped:
+                file_col = 7 - i  # Reversed when flipped
+            else:
+                file_col = i
+            tk.Label(self.board_frame, text=chr(97+i)).grid(row=8, column=file_col)
 
     def create_control_panel(self):
         """Create the control panel with buttons and move list."""
@@ -392,44 +425,20 @@ class ChessboardGUI(tk.Frame):
 
     def flip_board(self):
         """Flip the board view."""
-        # Store the current board state
-        current_positions = {}
-        for row in range(8):
-            for col in range(8):
-                square = self.squares[(row, col)]
-                current_positions[(row, col)] = (square.piece, square.highlight)
+        # Toggle the flipped state
+        self.board_flipped = not self.board_flipped
         
-        # Clear the board
+        # Clear the existing squares
         for widget in self.board_frame.winfo_children():
             if isinstance(widget, ChessSquare):
                 widget.destroy()
-            elif isinstance(widget, tk.Label):
-                widget.destroy()
         
-        # Recreate the squares in flipped orientation
-        self.squares = {}
-        for row in range(8):
-            for col in range(8):
-                color = 'light' if (row + col) % 2 == 0 else 'dark'
-                # Flipped board: row->7-row
-                square = ChessSquare(self.board_frame, self.square_size, row, col, color)
-                square.grid(row=7-row, column=7-col)
-                square.bind("<Button-1>", lambda e, r=row, c=col: self.on_square_click(r, c))
-                self.squares[(row, col)] = square
-                
-                # Restore the piece and highlight
-                if (7-row, 7-col) in current_positions:
-                    old_piece, old_highlight = current_positions[(7-row, 7-col)]
-                    square.piece = old_piece
-                    square.highlight = old_highlight
-                    square._draw()
+        # Recreate the squares and labels with the new orientation
+        self.create_squares()
+        self.create_board_labels()
         
-        # Add rank and file labels in flipped orientation
-        for i in range(8):
-            # Rank labels
-            tk.Label(self.board_frame, text=str(i+1)).grid(row=7-i, column=8)
-            # File labels
-            tk.Label(self.board_frame, text=chr(97+i)).grid(row=8, column=7-i)
+        # Update the board with the current position
+        self.update_board()
 
     def save_comment(self):
         """Save the current comment to the current node."""

@@ -14,11 +14,16 @@ import _tkinter
 import chess
 import chess.pgn
 import chess.svg
+import chess.engine
 from PIL import Image, ImageTk
 import io
 import cairosvg
 from datetime import datetime
 import re
+import threading
+import subprocess
+import platform
+import shutil
 from split_pgn_for_chessable import process_pgn
 
 class ChessSquare(tk.Canvas):
@@ -55,6 +60,35 @@ class ChessSquare(tk.Canvas):
 
 class ChessboardGUI(tk.Frame):
     """Main chess board GUI component."""
+    def add_engine_line(self):
+        """Add the current engine-suggested move to the game."""
+        if not self.engine_path or not hasattr(self, 'engine_info_var'):
+            return
+            
+        # Extract the best move from the engine info
+        engine_info = self.engine_info_var.get()
+        if "Best:" not in engine_info:
+            messagebox.showinfo("No Engine Move", 
+                              "No engine move available. Start analysis first.")
+            return
+            
+        # Get the move in SAN format
+        best_move_part = engine_info.split("Best:")[1].strip()
+        best_move_san = best_move_part.split()[0]  # Get first word after "Best:"
+        
+        try:
+            # Find the move object from SAN
+            for move in self.board.legal_moves:
+                if self.board.san(move) == best_move_san:
+                    # Make the move
+                    self.make_move(move)
+                    return
+                    
+            messagebox.showinfo("Move Error", 
+                              f"Could not find move {best_move_san} in legal moves.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error adding engine line: {str(e)}")
+    
     def __init__(self, master, square_size=64):
         super().__init__(master)
         self.master = master
@@ -64,13 +98,22 @@ class ChessboardGUI(tk.Frame):
         self.board = chess.Board()
         self.game = chess.pgn.Game()
         self.current_node = self.game
+        self.engine = None
+        self.engine_path = None
+        self.analysis_running = False
+        self.analysis_thread = None
         self.setup_board()
         self.load_piece_images()
         self.create_board_widgets()
         self.create_control_panel()
         self.variation_tree = VariationTree(self, self.controls_frame)
         self.variation_tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.find_stockfish()
         self.update_board()
+        
+        # Now bind the engine line button since add_engine_line method is defined
+        if self.engine_path and hasattr(self, 'engine_line_button'):
+            self.engine_line_button.config(command=self.add_engine_line)
 
     def setup_board(self):
         """Initialize the chess board."""
@@ -159,6 +202,31 @@ class ChessboardGUI(tk.Frame):
         self.comment_text.pack(fill=tk.BOTH, padx=5, pady=5)
         tk.Button(comment_frame, text="Save Comment", command=self.save_comment).pack(pady=5)
         
+        # Engine analysis frame
+        engine_frame = tk.LabelFrame(self.controls_frame, text="Stockfish Analysis")
+        engine_frame.pack(fill=tk.X, pady=10)
+        
+        # Engine status and info
+        self.engine_info_var = tk.StringVar(value="Engine not running")
+        engine_info_label = tk.Label(engine_frame, textvariable=self.engine_info_var, 
+                                    font=("TkDefaultFont", 10), anchor="w")
+        engine_info_label.pack(fill=tk.X, padx=5, pady=5)
+        
+        engine_btn_frame = tk.Frame(engine_frame)
+        engine_btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        if self.engine_path:
+            self.analysis_button = tk.Button(engine_btn_frame, text="Start Analysis", command=self.start_analysis)
+            self.analysis_button.pack(side=tk.LEFT, padx=5)
+            
+            # Only show this button if engine is available
+            self.engine_line_button = tk.Button(engine_btn_frame, text="Add Engine Line")
+            self.engine_line_button.pack(side=tk.LEFT, padx=5)
+            # We'll bind this later after the add_engine_line method is defined
+        else:
+            self.analysis_button = tk.Button(engine_btn_frame, text="Install Stockfish", command=self.install_stockfish)
+            self.analysis_button.pack(side=tk.LEFT, padx=5)
+        
         # Action buttons
         button_frame = tk.Frame(self.controls_frame)
         button_frame.pack(fill=tk.X, pady=10)
@@ -167,6 +235,8 @@ class ChessboardGUI(tk.Frame):
         tk.Button(button_frame, text="Load PGN", command=self.load_pgn).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Save PGN", command=self.save_pgn).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Export for Chessable", command=self.export_chessable).pack(side=tk.RIGHT, padx=5)
+        
+        # No duplicate engine frame needed - already created above
 
     def update_board(self):
         """Update the board display to match the current position."""
@@ -203,6 +273,14 @@ class ChessboardGUI(tk.Frame):
             
         # Update variation tree
         self.variation_tree.update_tree(self.game, self.current_node)
+        
+        # Update engine analysis if running
+        if self.analysis_running:
+            # We don't need to restart the analysis as it continuously evaluates the current position
+            pass
+        else:
+            # Clear engine info
+            self.engine_info_var.set("Engine not running")
 
     def on_square_click(self, row, col):
         """Handle clicks on the chess board squares."""
@@ -314,8 +392,44 @@ class ChessboardGUI(tk.Frame):
 
     def flip_board(self):
         """Flip the board view."""
-        # Implement board flipping functionality
-        pass
+        # Store the current board state
+        current_positions = {}
+        for row in range(8):
+            for col in range(8):
+                square = self.squares[(row, col)]
+                current_positions[(row, col)] = (square.piece, square.highlight)
+        
+        # Clear the board
+        for widget in self.board_frame.winfo_children():
+            if isinstance(widget, ChessSquare):
+                widget.destroy()
+            elif isinstance(widget, tk.Label):
+                widget.destroy()
+        
+        # Recreate the squares in flipped orientation
+        self.squares = {}
+        for row in range(8):
+            for col in range(8):
+                color = 'light' if (row + col) % 2 == 0 else 'dark'
+                # Flipped board: row->7-row
+                square = ChessSquare(self.board_frame, self.square_size, row, col, color)
+                square.grid(row=7-row, column=7-col)
+                square.bind("<Button-1>", lambda e, r=row, c=col: self.on_square_click(r, c))
+                self.squares[(row, col)] = square
+                
+                # Restore the piece and highlight
+                if (7-row, 7-col) in current_positions:
+                    old_piece, old_highlight = current_positions[(7-row, 7-col)]
+                    square.piece = old_piece
+                    square.highlight = old_highlight
+                    square._draw()
+        
+        # Add rank and file labels in flipped orientation
+        for i in range(8):
+            # Rank labels
+            tk.Label(self.board_frame, text=str(i+1)).grid(row=7-i, column=8)
+            # File labels
+            tk.Label(self.board_frame, text=chr(97+i)).grid(row=8, column=7-i)
 
     def save_comment(self):
         """Save the current comment to the current node."""
@@ -419,6 +533,270 @@ class ChessboardGUI(tk.Frame):
             # Clean up temp file
             if os.path.exists(temp_pgn):
                 os.remove(temp_pgn)
+
+    def find_stockfish(self):
+        """Find Stockfish engine on the system."""
+        stockfish_paths = []
+        
+        # Common paths based on OS
+        if platform.system() == "Windows":
+            stockfish_paths = [
+                "stockfish.exe",
+                "engines/stockfish.exe",
+                "C:/Program Files/stockfish/stockfish.exe",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish.exe")
+            ]
+        elif platform.system() == "Darwin":  # macOS
+            stockfish_paths = [
+                "stockfish",
+                "/usr/local/bin/stockfish",
+                "/opt/homebrew/bin/stockfish",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish")
+            ]
+        else:  # Linux/Unix
+            stockfish_paths = [
+                "stockfish",
+                "/usr/bin/stockfish", 
+                "/usr/local/bin/stockfish",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish")
+            ]
+        
+        # Try to find Stockfish
+        for path in stockfish_paths:
+            if shutil.which(path) or (os.path.isfile(path) and os.access(path, os.X_OK)):
+                self.engine_path = path
+                print(f"Found Stockfish at: {path}")
+                # Update UI if analysis_button exists
+                if hasattr(self, 'analysis_button'):
+                    self.analysis_button.config(text="Start Analysis", command=self.start_analysis)
+                    
+                    # Add the engine line button if it doesn't exist
+                    if not hasattr(self, 'engine_line_button'):
+                        self.engine_line_button = tk.Button(self.analysis_button.master, text="Add Engine Line")
+                        self.engine_line_button.pack(side=tk.LEFT, padx=5)
+                        # We'll bind this in the constructor after the add_engine_line method is defined
+                break
+        
+        if self.engine_path is None:
+            print("Stockfish not found. Engine analysis will be disabled.")
+
+    def install_stockfish(self):
+        """Attempt to install Stockfish engine."""
+        if platform.system() == "Darwin":  # macOS
+            if messagebox.askyesno("Install Stockfish", 
+                                  "Stockfish was not found. Would you like to install it via Homebrew?"):
+                try:
+                    # Check if Homebrew is installed
+                    result = subprocess.run(["which", "brew"], capture_output=True, text=True)
+                    if result.returncode != 0:
+                        messagebox.showerror("Error", "Homebrew is not installed. Please install Homebrew first.")
+                        return
+                    
+                    # Try to install Stockfish
+                    install_cmd = ["brew", "install", "stockfish"]
+                    result = subprocess.run(install_cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0:
+                        messagebox.showinfo("Success", "Stockfish installed successfully.")
+                        # Find and configure Stockfish
+                        self.engine_path = self.find_stockfish_executable()
+                        if self.engine_path:
+                            # Update the button to show Start Analysis instead of Install
+                            self.analysis_button.config(text="Start Analysis", command=self.start_analysis)
+                            
+                            # Add the engine line button
+                            self.engine_line_button = tk.Button(self.analysis_button.master, text="Add Engine Line", command=self.add_engine_line)
+                            self.engine_line_button.pack(side=tk.LEFT, padx=5)
+                            
+                            # Update engine info
+                            self.engine_info_var.set(f"Stockfish ready at: {self.engine_path}")
+                    else:
+                        messagebox.showerror("Error", f"Failed to install Stockfish: {result.stderr}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Error during Stockfish installation: {str(e)}")
+                    
+        elif platform.system() == "Windows":
+            messagebox.showinfo("Manual Installation Required", 
+                              "Please download Stockfish from https://stockfishchess.org/download/ "
+                              "and place the executable in the same folder as this application.")
+        else:
+            messagebox.showinfo("Manual Installation Required", 
+                              "Please install Stockfish using your package manager, e.g., 'sudo apt install stockfish'")
+
+    def find_stockfish_executable(self):
+        """Find the Stockfish executable and return its path if found."""
+        stockfish_paths = []
+        
+        # Common paths based on OS
+        if platform.system() == "Windows":
+            stockfish_paths = [
+                "stockfish.exe",
+                "engines/stockfish.exe",
+                "C:/Program Files/stockfish/stockfish.exe",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish.exe")
+            ]
+        elif platform.system() == "Darwin":  # macOS
+            stockfish_paths = [
+                "stockfish",
+                "/usr/local/bin/stockfish",
+                "/opt/homebrew/bin/stockfish",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish")
+            ]
+        else:  # Linux/Unix
+            stockfish_paths = [
+                "stockfish",
+                "/usr/bin/stockfish", 
+                "/usr/local/bin/stockfish",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "stockfish", "stockfish")
+            ]
+        
+        # Try to find Stockfish
+        for path in stockfish_paths:
+            if shutil.which(path) or (os.path.isfile(path) and os.access(path, os.X_OK)):
+                print(f"Found Stockfish at: {path}")
+                return path
+                
+        return None
+
+    def create_engine(self):
+        """Create a new engine instance."""
+        if self.engine_path:
+            try:
+                return chess.engine.SimpleEngine.popen_uci(self.engine_path)
+            except Exception as e:
+                print(f"Error starting Stockfish: {str(e)}")
+                return None
+        return None
+        
+    def start_analysis(self):
+        """Start engine analysis of the current position."""
+        if self.analysis_running:
+            return
+            
+        if not self.engine_path:
+            messagebox.showinfo("Engine Not Found", 
+                               "Stockfish engine was not found on your system. Please install Stockfish and restart the application.")
+            return
+            
+        # Start analysis in a separate thread to avoid freezing the UI
+        self.analysis_running = True
+        self.analysis_thread = threading.Thread(target=self.run_analysis)
+        self.analysis_thread.daemon = True
+        self.analysis_thread.start()
+        
+        # Update UI
+        self.analysis_button.config(text="Stop Analysis", command=self.stop_analysis)
+        
+    def stop_analysis(self):
+        """Stop the current engine analysis."""
+        if not self.analysis_running:
+            return
+            
+        self.analysis_running = False
+        if self.engine:
+            try:
+                self.engine.quit()
+            except:
+                pass
+            self.engine = None
+            
+        # Update UI
+        self.analysis_button.config(text="Start Analysis", command=self.start_analysis)
+        self.engine_info_var.set("Analysis stopped")
+        
+    def run_analysis(self):
+        """Run the engine analysis in a background thread."""
+        try:
+            # Create a new engine instance
+            self.engine = self.create_engine()
+            if not self.engine:
+                self.master.after(0, lambda: self.engine_info_var.set("Failed to start engine"))
+                self.analysis_running = False
+                return
+                
+            # Set up analysis parameters
+            limit = chess.engine.Limit(time=0.5)  # 500ms per position
+            
+            # Set timeout of 20 seconds for analysis (adjustable)
+            MAX_ANALYSIS_TIME = 20  # seconds
+            start_time = datetime.now()
+            
+            while self.analysis_running:
+                # Get current position
+                current_pos = self.board.copy()
+                
+                # Check for timeout
+                elapsed_time = (datetime.now() - start_time).total_seconds()
+                if elapsed_time > MAX_ANALYSIS_TIME:
+                    self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
+                    self.master.after(0, self.stop_analysis)
+                    break
+                
+                # Run analysis
+                with self.engine.analysis(current_pos, limit) as analysis:
+                    for info in analysis:
+                        if not self.analysis_running:
+                            break
+                        
+                        # Check for timeout during analysis
+                        elapsed_time = (datetime.now() - start_time).total_seconds()
+                        if elapsed_time > MAX_ANALYSIS_TIME:
+                            self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
+                            self.master.after(0, self.stop_analysis)
+                            break
+                            
+                        # Extract evaluation information
+                        score_info = ""
+                        pv_info = ""
+                        depth_info = ""
+                        
+                        if "score" in info:
+                            score = info["score"].relative.score(mate_score=10000)
+                            if score is not None:
+                                # Convert score to pawns
+                                score_pawns = score / 100.0
+                                if score_pawns > 0:
+                                    score_info = f"+{score_pawns:.2f}"
+                                else:
+                                    score_info = f"{score_pawns:.2f}"
+                            
+                            # Check for mate
+                            mate = info["score"].relative.mate()
+                            if mate is not None:
+                                if mate > 0:
+                                    score_info = f"M{mate}"
+                                else:
+                                    score_info = f"M{abs(mate)}"
+                        
+                        if "depth" in info:
+                            depth_info = f"d{info['depth']}"
+                            
+                        if "pv" in info and len(info["pv"]) > 0:
+                            move = info["pv"][0]
+                            try:
+                                san = current_pos.san(move)
+                                pv_info = san
+                            except:
+                                pv_info = move.uci()
+                                
+                        # Update the UI
+                        engine_text = f"Eval: {score_info} | {depth_info} | Best: {pv_info}"
+                        self.master.after(0, lambda t=engine_text: self.engine_info_var.set(t))
+                        
+                        # If we've reached a good depth, break
+                        if "depth" in info and info["depth"] >= 18:
+                            break
+                            
+            # Cleanup
+            if self.engine:
+                self.engine.quit()
+                self.engine = None
+                
+        except Exception as e:
+            print(f"Analysis error: {str(e)}")
+        finally:
+            self.analysis_running = False
+            self.master.after(0, lambda: self.analysis_button.config(text="Start Analysis", command=self.start_analysis))
 
 
 class VariationTree(tk.Frame):
@@ -599,6 +977,14 @@ def main():
     # Create and pack the chess board GUI
     chess_gui = ChessboardGUI(root)
     chess_gui.pack(fill=tk.BOTH, expand=True)
+    
+    # Handle cleanup when the window is closed
+    def on_closing():
+        if chess_gui.engine:
+            chess_gui.stop_analysis()
+        root.destroy()
+        
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     
     root.mainloop()
 

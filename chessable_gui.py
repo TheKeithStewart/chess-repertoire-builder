@@ -686,6 +686,7 @@ class ChessboardGUI(tk.Frame):
         
         # Update UI
         self.analysis_button.config(text="Stop Analysis", command=self.stop_analysis)
+        self.engine_info_var.set("Starting analysis...")
         
     def stop_analysis(self):
         """Stop the current engine analysis."""
@@ -702,7 +703,11 @@ class ChessboardGUI(tk.Frame):
             
         # Update UI
         self.analysis_button.config(text="Start Analysis", command=self.start_analysis)
-        self.engine_info_var.set("Analysis stopped")
+        
+        # Only update the info if it's not already showing a result
+        current_info = self.engine_info_var.get()
+        if not "Eval:" in current_info and not "Analysis completed" in current_info:
+            self.engine_info_var.set("Analysis stopped")
         
     def run_analysis(self):
         """Run the engine analysis in a background thread."""
@@ -717,9 +722,10 @@ class ChessboardGUI(tk.Frame):
             # Set up analysis parameters
             limit = chess.engine.Limit(time=0.5)  # 500ms per position
             
-            # Set timeout of 20 seconds for analysis (adjustable)
-            MAX_ANALYSIS_TIME = 20  # seconds
+            # Set timeout of 10 seconds for analysis (adjustable)
+            MAX_ANALYSIS_TIME = 10  # seconds
             start_time = datetime.now()
+            last_result = None
             
             while self.analysis_running:
                 # Get current position
@@ -728,7 +734,10 @@ class ChessboardGUI(tk.Frame):
                 # Check for timeout
                 elapsed_time = (datetime.now() - start_time).total_seconds()
                 if elapsed_time > MAX_ANALYSIS_TIME:
-                    self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
+                    if last_result:
+                        self.master.after(0, lambda: self.engine_info_var.set(f"{last_result} (Analysis completed)"))
+                    else:
+                        self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
                     self.master.after(0, self.stop_analysis)
                     break
                 
@@ -741,7 +750,10 @@ class ChessboardGUI(tk.Frame):
                         # Check for timeout during analysis
                         elapsed_time = (datetime.now() - start_time).total_seconds()
                         if elapsed_time > MAX_ANALYSIS_TIME:
-                            self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
+                            if last_result:
+                                self.master.after(0, lambda: self.engine_info_var.set(f"{last_result} (Analysis completed)"))
+                            else:
+                                self.master.after(0, lambda: self.engine_info_var.set("Analysis timeout reached"))
                             self.master.after(0, self.stop_analysis)
                             break
                             
@@ -782,6 +794,7 @@ class ChessboardGUI(tk.Frame):
                         # Update the UI
                         engine_text = f"Eval: {score_info} | {depth_info} | Best: {pv_info}"
                         self.master.after(0, lambda t=engine_text: self.engine_info_var.set(t))
+                        last_result = engine_text
                         
                         # If we've reached a good depth, break
                         if "depth" in info and info["depth"] >= 18:

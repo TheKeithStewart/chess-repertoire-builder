@@ -505,35 +505,88 @@ class VariationTree(tk.Frame):
 
     def on_tree_select(self, event):
         """Handle tree item selection."""
-        selected_item = self.tree.focus()
-        if selected_item:
-            # Get the path to this node
-            path = []
-            parent = selected_item
-            while parent:
-                path.insert(0, parent)
-                parent = self.tree.parent(parent)
+        try:
+            # Get the selected item
+            selected_item = self.tree.focus()
+            if not selected_item:
+                return
                 
-            # Navigate to the selected node
+            # Get the item data
+            try:
+                item_text = self.tree.item(selected_item, "text")
+            except _tkinter.TclError:
+                # Selected item no longer exists in tree
+                return
+            
+            # Check if it's the root node
+            if item_text == "Game Start":
+                self.chess_gui.go_to_start()
+                return
+                
+            # First, reset the board
             self.chess_gui.go_to_start()
             
-            # Skip the root node
-            for i, item_id in enumerate(path):
-                if i == 0:
-                    continue  # Skip root
+            # Simple approach: just use the display text to navigate
+            # Find the move in the text (e.g., "1. e4" -> "e4" or "5... Nf6" -> "Nf6")
+            move_text = None
+            if "..." in item_text:
+                parts = item_text.split("...")
+                if len(parts) > 1:
+                    move_parts = parts[1].strip().split()
+                    if move_parts:
+                        move_text = move_parts[0].rstrip('+#').strip()
+            elif ". " in item_text:
+                parts = item_text.split(". ")
+                if len(parts) > 1:
+                    move_parts = parts[1].strip().split()
+                    if move_parts:
+                        move_text = move_parts[0].rstrip('+#').strip()
+            
+            if not move_text:
+                return
                 
-                try:
-                    idx = self.tree.index(item_id)
-                    if self.chess_gui.current_node.variations:
-                        if idx < len(self.chess_gui.current_node.variations):
-                            move = self.chess_gui.current_node.variations[idx].move
-                            self.chess_gui.board.push(move)
-                            self.chess_gui.current_node = self.chess_gui.current_node.variations[idx]
-                except (ValueError, _tkinter.TclError) as e:
-                    # Item not found or invalid, skip it
-                    print(f"Warning: Error navigating tree at item {item_id}: {str(e)}")
-                    continue
-                        
+            # Navigate through the game to find this move
+            def find_move_in_game(node, target_text, path=None):
+                """Find a move by text recursively through the game tree."""
+                if path is None:
+                    path = []
+                
+                for variation in node.variations:
+                    try:
+                        # Try to get SAN for this move
+                        san = node.board().san(variation.move).rstrip('+#')
+                        if san == target_text:
+                            # Found our move!
+                            return path + [variation]
+                    except:
+                        # If we can't get SAN, try UCI notation
+                        if str(variation.move) == target_text:
+                            return path + [variation]
+                    
+                    # Recursively check this variation
+                    result = find_move_in_game(variation, target_text, path + [variation])
+                    if result:
+                        return result
+                
+                return None
+            
+            # Find the move in the game tree
+            move_path = find_move_in_game(self.chess_gui.game, move_text)
+            
+            if move_path:
+                # Follow the path to the target move
+                self.chess_gui.go_to_start()
+                for node in move_path:
+                    self.chess_gui.board.push(node.move)
+                    self.chess_gui.current_node = node
+                
+                # Update the display
+                self.chess_gui.update_board()
+            
+        except Exception as e:
+            print(f"Error in tree selection: {str(e)}")
+            # Reset to a safe state
+            self.chess_gui.go_to_start()
             self.chess_gui.update_board()
 
 

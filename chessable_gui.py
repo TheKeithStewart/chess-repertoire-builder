@@ -289,17 +289,46 @@ class ChessboardGUI(tk.Frame):
     def update_board(self):
         """Update the board display to match the current position."""
         try:
+            # Store previous board state if it exists
+            if not hasattr(self, 'previous_board_state'):
+                self.previous_board_state = None
+                
+            # Create a representation of current board state
+            current_state = {}
             for row in range(8):
                 for col in range(8):
-                    square = self.squares[(row, col)]
-                    square.set_highlight(False)
-                    
-                    # Get the piece at this position
-                    piece = self.board.piece_at(chess.square(col, row))
-                    if piece:
-                        square.set_piece(self.piece_images[piece.symbol()])
-                    else:
-                        square.set_piece(None)
+                    sq = chess.square(col, row)
+                    piece = self.board.piece_at(sq)
+                    current_state[(row, col)] = piece.symbol() if piece else None
+            
+            # Clear all highlights first
+            for row in range(8):
+                for col in range(8):
+                    self.squares[(row, col)].set_highlight(False)
+            
+            # Only update squares that have changed
+            if self.previous_board_state is None:
+                # First update, need to update all squares
+                for row in range(8):
+                    for col in range(8):
+                        piece_symbol = current_state[(row, col)]
+                        if piece_symbol:
+                            self.squares[(row, col)].set_piece(self.piece_images[piece_symbol])
+                        else:
+                            self.squares[(row, col)].set_piece(None)
+            else:
+                # Update only changed squares
+                for row in range(8):
+                    for col in range(8):
+                        if current_state[(row, col)] != self.previous_board_state.get((row, col)):
+                            piece_symbol = current_state[(row, col)]
+                            if piece_symbol:
+                                self.squares[(row, col)].set_piece(self.piece_images[piece_symbol])
+                            else:
+                                self.squares[(row, col)].set_piece(None)
+            
+            # Save current state for next comparison
+            self.previous_board_state = current_state
                         
             # Update selected square and legal moves
             if self.selected_square:
@@ -319,8 +348,9 @@ class ChessboardGUI(tk.Frame):
             self.comment_text.delete(1.0, tk.END)
             if self.current_node.comment:
                 self.comment_text.insert(tk.END, self.current_node.comment)
-                
+            
             # Update variation tree with the current position
+            # Only rebuild the tree if it's necessary
             self.variation_tree.update_tree(self.game, self.current_node)
             
             # Update engine analysis if running
@@ -861,6 +891,53 @@ class ChessboardGUI(tk.Frame):
             self.analysis_running = False
             self.master.after(0, lambda: self.analysis_button.config(text="Start Analysis", command=self.start_analysis))
 
+    def update_board_minimal(self):
+        """Performs a minimal update of the board for better performance when navigating moves."""
+        try:
+            # Update the board display
+            if not hasattr(self, 'previous_board_state'):
+                self.previous_board_state = {}
+                
+            # Create a representation of current board state
+            current_state = {}
+            for row in range(8):
+                for col in range(8):
+                    sq = chess.square(col, row)
+                    piece = self.board.piece_at(sq)
+                    current_state[(row, col)] = piece.symbol() if piece else None
+            
+            # Clear all highlights
+            for row in range(8):
+                for col in range(8):
+                    self.squares[(row, col)].set_highlight(False)
+            
+            # Update only changed squares
+            for row in range(8):
+                for col in range(8):
+                    if current_state[(row, col)] != self.previous_board_state.get((row, col)):
+                        piece_symbol = current_state[(row, col)]
+                        if piece_symbol:
+                            self.squares[(row, col)].set_piece(self.piece_images[piece_symbol])
+                        else:
+                            self.squares[(row, col)].set_piece(None)
+            
+            # Save current state for next comparison
+            self.previous_board_state = current_state
+            
+            # Update comment field
+            self.comment_text.delete(1.0, tk.END)
+            if self.current_node.comment:
+                self.comment_text.insert(tk.END, self.current_node.comment)
+            
+            # Only update the button highlights in the variation tree
+            # This is significantly faster than rebuilding the entire tree
+            self.variation_tree._update_button_highlights(self.current_node)
+            self.variation_tree._scroll_to_current_move()
+            
+        except Exception as e:
+            print(f"Error updating board minimally: {str(e)}")
+            # Fall back to full update if there's an error
+            self.update_board()
 
 class MoveButton(tk.Button):
     """A button representing a chess move."""
@@ -982,6 +1059,19 @@ class VariationTree(tk.Frame):
         # Get filter text
         filter_text = self.filter_var.get().lower()
         
+        # Check if we only need to update the current node highlight
+        # This is an optimization to avoid rebuilding the entire tree
+        if hasattr(self, 'last_filter_text') and filter_text == self.last_filter_text and hasattr(self, 'last_game') and self.last_game == game:
+            # We can just update the current button highlights
+            self._update_button_highlights(current_node)
+            # Ensure current move is visible
+            self._scroll_to_current_move()
+            return
+        
+        # Store values for next comparison
+        self.last_filter_text = filter_text
+        self.last_game = game
+        
         # Clear existing moves
         for widget in self.moves_frame.winfo_children():
             widget.destroy()
@@ -1012,22 +1102,43 @@ class VariationTree(tk.Frame):
         # Ensure current move is visible
         self._scroll_to_current_move()
 
-    def _build_variation(self, node, current_node, row, variation_level=0, move_number=1, is_white=True, filter_text=""):
+    def _build_variation(self, node, current_node, row, variation_level=0, move_number=1, is_white=True, filter_text="", path_nodes=None):
         """Build a variation starting from the given node."""
+        # Initialize path_nodes on first call
+        if path_nodes is None:
+            # Pre-compute path from root to current position for faster checking
+            path_nodes = set()
+            temp_node = current_node
+            while temp_node != self.chess_gui.game:
+                path_nodes.add(temp_node)
+                temp_node = temp_node.parent
+        
         # Skip the root node, go straight to its variations
         if node == self.chess_gui.game:
-            for i, variation in enumerate(node.variations):
+            # Process mainline first
+            if node.variations:
                 next_row = self._build_variation(
-                    variation, current_node, row, 
+                    node.variations[0], current_node, row, 
                     variation_level, move_number, is_white,
-                    filter_text
+                    filter_text, path_nodes
                 )
                 row = next_row
+                
+                # Process alternative variations
+                for i in range(1, len(node.variations)):
+                    next_row = self._build_variation(
+                        node.variations[i], current_node, row, 
+                        variation_level, move_number, is_white,
+                        filter_text, path_nodes
+                    )
+                    row = next_row
             return row
         
-        # Get move in SAN notation
+        # Get move in SAN notation (cache this for better performance)
         try:
-            san = node.parent.board().san(node.move)
+            if not hasattr(node, 'san_cached'):
+                node.san_cached = node.parent.board().san(node.move)
+            san = node.san_cached
         except (AssertionError, ValueError):
             san = str(node.move)
         
@@ -1041,19 +1152,9 @@ class VariationTree(tk.Frame):
             (comment and filter_text.lower() in comment.lower())
         )
         
-        # Skip rendering this move and its variations if it doesn't match the filter
-        # Unless it's on the path to the current position
+        # Check if current node or in path to current
         is_current = (node == current_node)
-        is_on_path_to_current = is_current
-        
-        if not is_current and current_node != self.chess_gui.game:
-            # Check if this node is on the path to the current position
-            temp_node = current_node
-            while temp_node != self.chess_gui.game:
-                if temp_node == node:
-                    is_on_path_to_current = True
-                    break
-                temp_node = temp_node.parent
+        is_on_path_to_current = is_current or node in path_nodes
         
         # Skip if doesn't match filter and not on path to current move
         if not match_filter and not is_on_path_to_current:
@@ -1105,7 +1206,7 @@ class VariationTree(tk.Frame):
             main_variation = node.variations[0]
             next_row = self._build_variation(
                 main_variation, current_node, row if not next_is_white else row+1,
-                variation_level, next_move_number, next_is_white, filter_text
+                variation_level, next_move_number, next_is_white, filter_text, path_nodes
             )
             row = next_row
         else:
@@ -1120,7 +1221,7 @@ class VariationTree(tk.Frame):
             row += 1
             next_row = self._build_variation(
                 variation, current_node, row,
-                variation_level + 1, move_number, is_white, filter_text
+                variation_level + 1, move_number, is_white, filter_text, path_nodes
             )
             row = next_row
             
@@ -1129,23 +1230,33 @@ class VariationTree(tk.Frame):
     def _go_to_node(self, target_node):
         """Navigate to the specified node in the game tree."""
         try:
+            # Check if we're already at this node to avoid unnecessary work
+            if self.chess_gui.current_node == target_node:
+                return
+                
             # Find path from root to target node
             path = []
             current = target_node
             while current != self.chess_gui.game:
                 path.insert(0, current)
                 current = current.parent
-                
-            # Reset to start position
-            self.chess_gui.go_to_start()
             
-            # Follow path to target node
+            # Create a new board to avoid rebuilding move-by-move
+            new_board = chess.Board()
             for node in path:
-                self.chess_gui.board.push(node.move)
-                self.chess_gui.current_node = node
+                new_board.push(node.move)
+            
+            # Set the board and current node directly
+            self.chess_gui.board = new_board
+            self.chess_gui.current_node = target_node
+            self.chess_gui.selected_square = None
+            self.chess_gui.legal_moves = []
                 
-            # Update the board display
-            self.chess_gui.update_board()
+            # Use the update_board_minimal method if available, otherwise fall back to update_board
+            if hasattr(self.chess_gui, 'update_board_minimal'):
+                self.chess_gui.update_board_minimal()
+            else:
+                self.chess_gui.update_board()
             
         except Exception as e:
             print(f"Error navigating to node: {str(e)}")
@@ -1191,6 +1302,15 @@ class VariationTree(tk.Frame):
         widget.bind("<Enter>", enter)
         widget.bind("<Leave>", leave)
 
+    def _update_button_highlights(self, current_node):
+        """Update the highlighting of move buttons without rebuilding the tree."""
+        for node, button in self.move_buttons:
+            is_current = (node == current_node)
+            button.set_current(is_current)
+        
+        # Update the scrollbar
+        self.moves_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
 def main():
     """Main entry point for the application."""

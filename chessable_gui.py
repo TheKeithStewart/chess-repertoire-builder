@@ -24,6 +24,12 @@ import threading
 import subprocess
 import platform
 import shutil
+from datetime import datetime
+import re
+import threading
+import subprocess
+import platform
+import shutil
 from split_pgn_for_chessable import process_pgn
 
 class ChessSquare(tk.Canvas):
@@ -107,8 +113,17 @@ class ChessboardGUI(tk.Frame):
         self.load_piece_images()
         self.create_board_widgets()
         self.create_control_panel()
+        
+        # Create variation tree for moves
         self.variation_tree = VariationTree(self, self.controls_frame)
         self.variation_tree.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create a status bar
+        self.status_var = tk.StringVar(value="Ready. Shortcuts: ← → (navigate), Home/End (start/end), F (flip board), E (analysis)")
+        self.status_bar = tk.Label(self.controls_frame, textvariable=self.status_var, 
+                                  bd=1, relief=tk.SUNKEN, anchor=tk.W, padx=5, pady=2)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
         self.find_stockfish()
         self.update_board()
         
@@ -273,56 +288,82 @@ class ChessboardGUI(tk.Frame):
 
     def update_board(self):
         """Update the board display to match the current position."""
-        for row in range(8):
-            for col in range(8):
-                square = self.squares[(row, col)]
-                square.set_highlight(False)
-                
-                # Get the piece at this position
-                piece = self.board.piece_at(chess.square(col, row))
-                if piece:
-                    square.set_piece(self.piece_images[piece.symbol()])
-                else:
-                    square.set_piece(None)
+        try:
+            for row in range(8):
+                for col in range(8):
+                    square = self.squares[(row, col)]
+                    square.set_highlight(False)
                     
-        # Update selected square and legal moves
-        if self.selected_square:
-            row, col = self.selected_square
-            self.squares[(row, col)].set_highlight(True)
-            for move in self.legal_moves:
-                to_row = chess.square_rank(move.to_square)
-                to_col = chess.square_file(move.to_square)
-                self.squares[(to_row, to_col)].set_highlight(True)
-        
-        # Update headers
-        self.game.headers["Event"] = self.event_var.get()
-        self.game.headers["StudyName"] = self.study_var.get()
-        self.game.headers["ChapterName"] = self.chapter_var.get()
-        
-        # Update comment field
-        self.comment_text.delete(1.0, tk.END)
-        if self.current_node.comment:
-            self.comment_text.insert(tk.END, self.current_node.comment)
+                    # Get the piece at this position
+                    piece = self.board.piece_at(chess.square(col, row))
+                    if piece:
+                        square.set_piece(self.piece_images[piece.symbol()])
+                    else:
+                        square.set_piece(None)
+                        
+            # Update selected square and legal moves
+            if self.selected_square:
+                row, col = self.selected_square
+                self.squares[(row, col)].set_highlight(True)
+                for move in self.legal_moves:
+                    to_row = chess.square_rank(move.to_square)
+                    to_col = chess.square_file(move.to_square)
+                    self.squares[(to_row, to_col)].set_highlight(True)
             
-        # Update variation tree
-        self.variation_tree.update_tree(self.game, self.current_node)
-        
-        # Update engine analysis if running
-        if self.analysis_running:
-            # We don't need to restart the analysis as it continuously evaluates the current position
-            pass
-        else:
-            # Clear engine info
-            self.engine_info_var.set("Engine not running")
+            # Update headers
+            self.game.headers["Event"] = self.event_var.get()
+            self.game.headers["StudyName"] = self.study_var.get()
+            self.game.headers["ChapterName"] = self.chapter_var.get()
+            
+            # Update comment field
+            self.comment_text.delete(1.0, tk.END)
+            if self.current_node.comment:
+                self.comment_text.insert(tk.END, self.current_node.comment)
+                
+            # Update variation tree with the current position
+            self.variation_tree.update_tree(self.game, self.current_node)
+            
+            # Update engine analysis if running
+            if self.analysis_running:
+                # We don't need to restart the analysis as it continuously evaluates the current position
+                pass
+            else:
+                # Clear engine info
+                self.engine_info_var.set("Engine not running")
+                
+            # Update status bar with current position info
+            turn = "White" if self.board.turn == chess.WHITE else "Black"
+            move_number = (self.board.fullmove_number if self.board.turn == chess.BLACK 
+                           else self.board.fullmove_number)
+            status_text = f"{turn} to move. Move: {move_number}. "
+            
+            # Add evaluation if available
+            if self.analysis_running and hasattr(self, 'engine_info_var'):
+                engine_info = self.engine_info_var.get()
+                if "Score:" in engine_info:
+                    status_text += f"{engine_info.split('Score:')[1].strip().split()[0]} "
+                    
+            # Add keyboard shortcuts reminder
+            status_text += "| ← → (navigate), Home/End, F (flip), E (analysis)"
+            self.status_var.set(status_text)
+            
+        except Exception as e:
+            print(f"Error updating board: {str(e)}")
+            self.status_var.set(f"Error updating display. See console for details.")
 
     def on_square_click(self, row, col):
         """Handle clicks on the chess board squares."""
         square = chess.square(col, row)
+        square_name = chess.square_name(square)
         
         if self.selected_square:
             # Check if this is a legal target square
             from_square = chess.square(self.selected_square[1], self.selected_square[0])
+            from_square_name = chess.square_name(from_square)
             move = chess.Move(from_square, square)
+            
+            # Update status bar
+            self.status_var.set(f"Selected move: {from_square_name} to {square_name}")
             
             # Check for promotion
             if move in self.legal_moves and self.board.piece_at(from_square).piece_type == chess.PAWN:
@@ -821,6 +862,32 @@ class ChessboardGUI(tk.Frame):
             self.master.after(0, lambda: self.analysis_button.config(text="Start Analysis", command=self.start_analysis))
 
 
+class MoveButton(tk.Button):
+    """A button representing a chess move."""
+    def __init__(self, master, text, move_node=None, comment="", is_current=False, **kwargs):
+        # Create a custom style for the button
+        super().__init__(
+            master, 
+            text=text, 
+            padx=2, 
+            pady=1, 
+            relief=tk.GROOVE,
+            bg="lightblue" if is_current else "#f0f0f0",
+            activebackground="#d0d0ff" if is_current else "#e0e0e0",
+            borderwidth=1,
+            **kwargs
+        )
+        self.move_node = move_node
+        self.comment = comment
+        self.is_current = is_current
+        
+    def set_current(self, is_current):
+        """Set whether this move is the current position."""
+        self.is_current = is_current
+        self.config(bg="lightblue" if is_current else "#f0f0f0")
+        self.config(activebackground="#d0d0ff" if is_current else "#e0e0e0")
+
+
 class VariationTree(tk.Frame):
     """A widget to display and navigate the game tree."""
     def __init__(self, chess_gui, master):
@@ -828,166 +895,301 @@ class VariationTree(tk.Frame):
         self.chess_gui = chess_gui
         self.master = master
         
-        # Create a frame for the tree
-        tree_frame = tk.LabelFrame(self, text="Moves")
-        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Create a frame for the moves with a label and filter
+        moves_header_frame = tk.Frame(self)
+        moves_header_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
         
-        # Create the treeview
-        self.tree = ttk.Treeview(tree_frame, selectmode='browse')
-        self.tree.pack(fill=tk.BOTH, expand=True)
+        self.moves_label = tk.Label(moves_header_frame, text="Moves", font=("TkDefaultFont", 10, "bold"))
+        self.moves_label.pack(side=tk.LEFT, anchor=tk.W)
         
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        # Add a search/filter box
+        self.filter_var = tk.StringVar()
+        self.filter_var.trace_add("write", self._filter_changed)  # Using trace_add instead of trace
+        filter_entry = tk.Entry(moves_header_frame, textvariable=self.filter_var, width=15)
+        filter_entry.pack(side=tk.RIGHT, padx=(5, 0))
         
-        # Bind selection event
-        self.tree.bind('<<TreeviewSelect>>', self.on_tree_select)
+        filter_label = tk.Label(moves_header_frame, text="Filter:")
+        filter_label.pack(side=tk.RIGHT)
+        
+        # Create a frame to hold the moves
+        self.moves_container = tk.Frame(self, bd=1, relief=tk.SUNKEN)
+        self.moves_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create a canvas with scrolling capability
+        self.canvas = tk.Canvas(self.moves_container, highlightthickness=0)
+        self.scrollbar = tk.Scrollbar(self.moves_container, orient="vertical", command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        # Pack the scrollbar and canvas
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Create a frame inside the canvas to hold the moves content
+        self.moves_frame = tk.Frame(self.canvas)
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.moves_frame, anchor="nw")
+        
+        # Configure canvas to adjust with frame size
+        self.moves_frame.bind("<Configure>", self._on_frame_configure)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+        
+        # List to keep track of created move buttons and search ability
+        self.move_buttons = []
+        self.current_game = None
+        self.current_position = None
+        
+        # Add mouse wheel scrolling
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
+    
+    def _filter_changed(self, *args):
+        """Handle filter text changes"""
+        if self.current_game and self.current_position:
+            self.update_tree(self.current_game, self.current_position)
+
+    def _on_frame_configure(self, event):
+        """Reset the scroll region to encompass the inner frame"""
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event):
+        """When the canvas changes size, resize the frame within it."""
+        self.canvas.itemconfig(self.canvas_frame, width=event.width)
+    
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling."""
+        # Cross-platform mouse wheel scrolling
+        try:
+            if event.num == 4 or (hasattr(event, 'delta') and event.delta > 0):
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5 or (hasattr(event, 'delta') and event.delta < 0):
+                self.canvas.yview_scroll(1, "units")
+            # For macOS
+            elif hasattr(event, 'delta'):
+                if event.delta < 0:
+                    self.canvas.yview_scroll(1, "units")
+                else:
+                    self.canvas.yview_scroll(-1, "units")
+        except Exception as e:
+            # Fallback for any platform-specific issues
+            print(f"Mouse wheel error: {str(e)}")
 
     def update_tree(self, game, current_node):
-        """Update the variation tree display."""
-        # Clear existing tree
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        # Add the game moves to the tree
-        self._add_node(game, "", 0, current_node)
-
-    def _add_node(self, node, parent_id, depth, current_node, move_number=1, is_white=True):
-        """Recursively add nodes to the tree."""
-        if node == current_node:
-            tags = ('current',)
-        else:
-            tags = ()
-            
-        # Create item text
-        text = ""
-        if node.parent:
-            # This is a move node
-            try:
-                # Try to get SAN notation safely
-                san_move = node.parent.board().san(node.move)
-                if is_white:
-                    text = f"{move_number}. {san_move}"
-                else:
-                    text = f"{move_number}... {san_move}"
-            except (AssertionError, ValueError) as e:
-                # Fallback to UCI notation if SAN fails
-                if is_white:
-                    text = f"{move_number}. {node.move}"
-                else:
-                    text = f"{move_number}... {node.move}"
-                print(f"Warning: Could not get SAN for move {node.move}: {str(e)}")
-                
-            # Add comment if exists
-            if node.comment:
-                comment_preview = node.comment[:20] + "..." if len(node.comment) > 20 else node.comment
-                text += f" ({comment_preview})"
-        else:
-            # This is the root node
-            text = "Game Start"
-            
-        # Add the item to the tree
-        item_id = self.tree.insert(parent_id, 'end', text=text, open=True, tags=tags)
+        """Update the move display with the current game tree."""
+        # Store current game and position for filter usage
+        self.current_game = game
+        self.current_position = current_node
         
-        # Configure tag for highlighting the current position
-        self.tree.tag_configure('current', background='lightblue')
+        # Get filter text
+        filter_text = self.filter_var.get().lower()
         
-        # Add variations
-        for i, child in enumerate(node.variations):
-            # Update move number and color
-            next_move_number = move_number
-            next_is_white = not is_white
-            if next_is_white:
-                next_move_number += 1
-                
-            self._add_node(child, item_id, depth+1, current_node, next_move_number, next_is_white)
+        # Clear existing moves
+        for widget in self.moves_frame.winfo_children():
+            widget.destroy()
+        self.move_buttons = []
+        
+        # Add a "Start" button to return to initial position
+        start_btn = MoveButton(
+            self.moves_frame, 
+            text="Start", 
+            is_current=(current_node == game),
+            command=lambda: self.chess_gui.go_to_start()
+        )
+        start_btn.grid(row=0, column=0, sticky="w", padx=2, pady=2)
+        self.move_buttons.append((game, start_btn))
+        
+        # Build the tree of moves
+        row = self._build_variation(game, current_node, row=1, variation_level=0, filter_text=filter_text)
+        
+        # If no moves were shown due to filtering, add a message
+        if row == 1 and filter_text:
+            no_results = tk.Label(self.moves_frame, text=f"No moves match '{filter_text}'")
+            no_results.grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        
+        # Update the scrollbar
+        self.moves_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        
+        # Ensure current move is visible
+        self._scroll_to_current_move()
 
-    def on_tree_select(self, event):
-        """Handle tree item selection."""
+    def _build_variation(self, node, current_node, row, variation_level=0, move_number=1, is_white=True, filter_text=""):
+        """Build a variation starting from the given node."""
+        # Skip the root node, go straight to its variations
+        if node == self.chess_gui.game:
+            for i, variation in enumerate(node.variations):
+                next_row = self._build_variation(
+                    variation, current_node, row, 
+                    variation_level, move_number, is_white,
+                    filter_text
+                )
+                row = next_row
+            return row
+        
+        # Get move in SAN notation
         try:
-            # Get the selected item
-            selected_item = self.tree.focus()
-            if not selected_item:
-                return
-                
-            # Get the item data
-            try:
-                item_text = self.tree.item(selected_item, "text")
-            except _tkinter.TclError:
-                # Selected item no longer exists in tree
-                return
+            san = node.parent.board().san(node.move)
+        except (AssertionError, ValueError):
+            san = str(node.move)
+        
+        # Get comment (if any)
+        comment = node.comment if node.comment else ""
+        
+        # Check if this move matches the filter
+        match_filter = (
+            not filter_text or 
+            filter_text.lower() in san.lower() or 
+            (comment and filter_text.lower() in comment.lower())
+        )
+        
+        # Skip rendering this move and its variations if it doesn't match the filter
+        # Unless it's on the path to the current position
+        is_current = (node == current_node)
+        is_on_path_to_current = is_current
+        
+        if not is_current and current_node != self.chess_gui.game:
+            # Check if this node is on the path to the current position
+            temp_node = current_node
+            while temp_node != self.chess_gui.game:
+                if temp_node == node:
+                    is_on_path_to_current = True
+                    break
+                temp_node = temp_node.parent
+        
+        # Skip if doesn't match filter and not on path to current move
+        if not match_filter and not is_on_path_to_current:
+            return row
+        
+        # Calculate the column based on whether it's a white or black move
+        base_col = variation_level * 3  # Each variation level gets 3 columns (number, white, black)
+        
+        if is_white:
+            # Add move number in the first column of this variation level
+            num_label = tk.Label(
+                self.moves_frame, 
+                text=f"{move_number}.", 
+                padx=2, 
+                pady=1
+            )
+            num_label.grid(row=row, column=base_col, sticky="e")
             
-            # Check if it's the root node
-            if item_text == "Game Start":
-                self.chess_gui.go_to_start()
-                return
+            # Column for white's move is base_col + 1
+            move_col = base_col + 1
+            next_is_white = False
+            next_move_number = move_number
+        else:
+            # Column for black's move is base_col + 2
+            move_col = base_col + 2
+            next_is_white = True
+            next_move_number = move_number + 1
+        
+        # Create the move button
+        move_btn = MoveButton(
+            self.moves_frame,
+            text=san,
+            move_node=node,
+            comment=comment,
+            is_current=is_current,
+            command=lambda n=node: self._go_to_node(n)
+        )
+        move_btn.grid(row=row, column=move_col, sticky="w", padx=2, pady=1)
+        
+        # Add tooltip with comment if present
+        if comment:
+            self._create_tooltip(move_btn, comment)
+        
+        # Keep track of this button
+        self.move_buttons.append((node, move_btn))
+        
+        # Process mainline continuation
+        if node.variations:
+            main_variation = node.variations[0]
+            next_row = self._build_variation(
+                main_variation, current_node, row if not next_is_white else row+1,
+                variation_level, next_move_number, next_is_white, filter_text
+            )
+            row = next_row
+        else:
+            # If this move has no continuation, the next row is the next one
+            row += 1 if is_white else 1
+        
+        # Process alternative variations (sidelines)
+        for i in range(1, len(node.variations)):
+            variation = node.variations[i]
+            
+            # Add a new row and increase the variation level for alternative lines
+            row += 1
+            next_row = self._build_variation(
+                variation, current_node, row,
+                variation_level + 1, move_number, is_white, filter_text
+            )
+            row = next_row
+            
+        return row
+
+    def _go_to_node(self, target_node):
+        """Navigate to the specified node in the game tree."""
+        try:
+            # Find path from root to target node
+            path = []
+            current = target_node
+            while current != self.chess_gui.game:
+                path.insert(0, current)
+                current = current.parent
                 
-            # First, reset the board
+            # Reset to start position
             self.chess_gui.go_to_start()
             
-            # Simple approach: just use the display text to navigate
-            # Find the move in the text (e.g., "1. e4" -> "e4" or "5... Nf6" -> "Nf6")
-            move_text = None
-            if "..." in item_text:
-                parts = item_text.split("...")
-                if len(parts) > 1:
-                    move_parts = parts[1].strip().split()
-                    if move_parts:
-                        move_text = move_parts[0].rstrip('+#').strip()
-            elif ". " in item_text:
-                parts = item_text.split(". ")
-                if len(parts) > 1:
-                    move_parts = parts[1].strip().split()
-                    if move_parts:
-                        move_text = move_parts[0].rstrip('+#').strip()
-            
-            if not move_text:
-                return
+            # Follow path to target node
+            for node in path:
+                self.chess_gui.board.push(node.move)
+                self.chess_gui.current_node = node
                 
-            # Navigate through the game to find this move
-            def find_move_in_game(node, target_text, path=None):
-                """Find a move by text recursively through the game tree."""
-                if path is None:
-                    path = []
-                
-                for variation in node.variations:
-                    try:
-                        # Try to get SAN for this move
-                        san = node.board().san(variation.move).rstrip('+#')
-                        if san == target_text:
-                            # Found our move!
-                            return path + [variation]
-                    except:
-                        # If we can't get SAN, try UCI notation
-                        if str(variation.move) == target_text:
-                            return path + [variation]
-                    
-                    # Recursively check this variation
-                    result = find_move_in_game(variation, target_text, path + [variation])
-                    if result:
-                        return result
-                
-                return None
-            
-            # Find the move in the game tree
-            move_path = find_move_in_game(self.chess_gui.game, move_text)
-            
-            if move_path:
-                # Follow the path to the target move
-                self.chess_gui.go_to_start()
-                for node in move_path:
-                    self.chess_gui.board.push(node.move)
-                    self.chess_gui.current_node = node
-                
-                # Update the display
-                self.chess_gui.update_board()
+            # Update the board display
+            self.chess_gui.update_board()
             
         except Exception as e:
-            print(f"Error in tree selection: {str(e)}")
+            print(f"Error navigating to node: {str(e)}")
             # Reset to a safe state
             self.chess_gui.go_to_start()
             self.chess_gui.update_board()
+    
+    def _scroll_to_current_move(self):
+        """Ensure the current move is visible in the scrolled area."""
+        for node, btn in self.move_buttons:
+            if btn.is_current:
+                # Get button position
+                x, y = btn.winfo_x(), btn.winfo_y()
+                
+                # Calculate canvas scrolling
+                canvas_height = self.canvas.winfo_height()
+                
+                # Scroll so the button is in the middle
+                self.canvas.yview_moveto(max(0, (y - canvas_height/2) / self.moves_frame.winfo_height()))
+                break
+    
+    def _create_tooltip(self, widget, text):
+        """Create a tooltip for a widget."""
+        def enter(event):
+            x, y, _, _ = widget.bbox("insert")
+            x += widget.winfo_rootx() + 25
+            y += widget.winfo_rooty() + 25
+            
+            # Create a top-level window
+            self.tooltip = tk.Toplevel(widget)
+            self.tooltip.wm_overrideredirect(True)
+            self.tooltip.wm_geometry(f"+{x}+{y}")
+            
+            label = tk.Label(self.tooltip, text=text, justify='left',
+                            background="#ffffff", relief="solid", borderwidth=1,
+                            padx=4, pady=2, wraplength=300)
+            label.pack()
+            
+        def leave(event):
+            if hasattr(self, 'tooltip'):
+                self.tooltip.destroy()
+                
+        widget.bind("<Enter>", enter)
+        widget.bind("<Leave>", leave)
 
 
 def main():
@@ -996,9 +1198,24 @@ def main():
     root.title("Chessable Course Builder")
     root.geometry("1200x800")
     
+    # Set up keyboard shortcuts
+    def setup_keyboard_shortcuts(app):
+        # Navigation shortcuts
+        root.bind('<Left>', lambda e: app.go_back())
+        root.bind('<Right>', lambda e: app.go_forward())
+        root.bind('<Home>', lambda e: app.go_to_start())
+        root.bind('<End>', lambda e: app.go_to_end())
+        # Flip board
+        root.bind('<F>', lambda e: app.flip_board())
+        # Engine analysis
+        root.bind('<E>', lambda e: app.start_analysis() if hasattr(app, 'analysis_running') and not app.analysis_running else None)
+    
     # Create and pack the chess board GUI
     chess_gui = ChessboardGUI(root)
     chess_gui.pack(fill=tk.BOTH, expand=True)
+    
+    # Set up the keyboard shortcuts
+    setup_keyboard_shortcuts(chess_gui)
     
     # Handle cleanup when the window is closed
     def on_closing():

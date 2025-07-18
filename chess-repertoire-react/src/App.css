@@ -22,63 +22,71 @@ body {
 .app-header {
   background-color: #2c3e50;
   color: white;
-  padding: 1rem 2rem;
+  padding: 0.75rem 1.5rem;
   text-align: center;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .app-header h1 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .app-header p {
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   opacity: 0.9;
 }
 
 .app-content {
   flex: 1;
   display: flex;
-  gap: 2rem;
-  padding: 2rem;
-  max-width: 1400px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 100%;
   margin: 0 auto;
   width: 100%;
+  justify-content: center;
 }
 
 .chess-section {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  max-width: 100%;
 }
 
 .chess-board-container {
   background: white;
   border-radius: 8px;
-  padding: 1rem;
+  padding: 0.5rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  max-width: 100%;
+  width: min(calc(100vw - 2rem), 600px);
+  height: auto;
 }
 
 .controls-section {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
   min-width: 300px;
+  max-width: 600px;
 }
 
 /* Game Controls */
 .game-controls {
   background: white;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .control-section {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .control-section:last-child {
@@ -86,9 +94,9 @@ body {
 }
 
 .control-section h3 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   color: #2c3e50;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .button-group {
@@ -144,20 +152,20 @@ body {
 .game-metadata {
   background: white;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .game-metadata h3 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   color: #2c3e50;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .metadata-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .metadata-row {
@@ -190,14 +198,16 @@ body {
 .move-history {
   background: white;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1rem;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .move-history h3 {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
   color: #2c3e50;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .move-list {
@@ -312,53 +322,62 @@ body {
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .app-content {
+    padding: 1rem;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 992px) {
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+  
+  .app-header p {
+    font-size: 1rem;
+  }
+}
+
 @media (max-width: 768px) {
   .app-content {
     flex-direction: column;
-    padding: 1rem;
-  }
-  
-  .chess-section {
-    order: 2;
-  }
-  
-  .controls-section {
-    order: 1;
+    align-items: center;
   }
   
   .chess-board-container {
-    align-self: stretch;
+    width: min(calc(100vw - 2rem), 480px);
   }
   
-  .metadata-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .metadata-row label {
-    flex: none;
-  }
-  
-  .button-group {
-    justify-content: center;
+  .controls-section {
+    width: 100%;
   }
 }
 
 @media (max-width: 480px) {
   .app-header {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
   }
   
   .app-header h1 {
     font-size: 1.5rem;
   }
   
-  .app-header p {
-    font-size: 1rem;
+  .chess-board-container {
+    padding: 0.25rem;
+    width: calc(100vw - 1rem);
   }
   
-  .button-group button {
-    flex: 1;
-    min-width: 80px;
+  .button-group {
+    justify-content: center;
+  }
+  
+  .metadata-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .metadata-row label {
+    margin-bottom: 0.25rem;
   }
 }

@@ -108,7 +108,8 @@ const ChessBoard: React.FC<ChessBoardProps> = ({
           boardOrientation: boardOrientation,
           squareStyles: customSquareStyles,
           showNotation: true,
-          boardStyle: { borderRadius: '8px' }
+          boardStyle: { borderRadius: '8px' },
+          animationDurationInMs: 200
         }}
       />
     </div>

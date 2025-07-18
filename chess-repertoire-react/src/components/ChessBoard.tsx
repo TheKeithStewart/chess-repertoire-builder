@@ -16,57 +16,20 @@ const ChessBoard: React.FC<ChessBoardProps> = ({
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
 
-  const handleSquareClick = useCallback((args: { piece: any; square: string }) => {
-    const { square } = args;
-    const squareAsSquare = square as Square;
-    if (selectedSquare) {
-      // Try to make move
-      const move = selectedSquare + square;
-      const moveObj = game.move({
-        from: selectedSquare,
-        to: squareAsSquare,
-        promotion: 'q' // Default to queen promotion
-      });
-      
-      if (moveObj) {
-        onMove(move);
-        setSelectedSquare(null);
-        setLegalMoves([]);
-      } else {
-        // Select new square if it has a piece
-        const piece = game.get(squareAsSquare);
-        if (piece && piece.color === game.turn()) {
-          setSelectedSquare(squareAsSquare);
-          const moves = game.moves({ square: squareAsSquare, verbose: true });
-          setLegalMoves(moves.map(move => move.to));
-        } else {
-          setSelectedSquare(null);
-          setLegalMoves([]);
-        }
-      }
-    } else {
-      // Select square if it has a piece of the correct color
-      const piece = game.get(squareAsSquare);
-      if (piece && piece.color === game.turn()) {
-        setSelectedSquare(squareAsSquare);
-        const moves = game.moves({ square: squareAsSquare, verbose: true });
-        setLegalMoves(moves.map(move => move.to));
-      }
-    }
-  }, [selectedSquare, game, onMove]);
-
-  const handlePieceDrop = useCallback((args: { piece: any; sourceSquare: string; targetSquare: string | null }) => {
-    const { sourceSquare, targetSquare } = args;
-    if (!targetSquare) return false;
-    
+  // Handle piece drop for drag and drop
+  const handlePieceDrop = useCallback((sourceSquare: Square, targetSquare: Square) => {
     try {
-      const moveObj = game.move({
-        from: sourceSquare as Square,
-        to: targetSquare as Square,
+      // Create a new Chess instance to attempt the move without affecting the original game
+      const newGame = new Chess(game.fen());
+      
+      const moveObj = newGame.move({
+        from: sourceSquare,
+        to: targetSquare,
         promotion: 'q' // Default to queen promotion
       });
       
       if (moveObj) {
+        // If move is valid, notify the parent component
         onMove(sourceSquare + targetSquare);
         setSelectedSquare(null);
         setLegalMoves([]);
@@ -78,6 +41,38 @@ const ChessBoard: React.FC<ChessBoardProps> = ({
       return false;
     }
   }, [game, onMove]);
+
+  // Handle square click for click-based moves
+  const handleSquareClick = useCallback((square: Square) => {
+    if (selectedSquare) {
+      // If a square is already selected, attempt to move to the clicked square
+      const moveResult = handlePieceDrop(selectedSquare, square);
+      
+      if (!moveResult) {
+        // If move failed, check if the new square has a piece of the correct color
+        const piece = game.get(square);
+        if (piece && piece.color === game.turn()) {
+          // Select the new piece
+          setSelectedSquare(square);
+          const moves = game.moves({ square, verbose: true });
+          setLegalMoves(moves.map(move => move.to as Square));
+        } else {
+          // Clear selection if clicking on empty square or opponent's piece
+          setSelectedSquare(null);
+          setLegalMoves([]);
+        }
+      }
+    } else {
+      // If no square is selected, check if the clicked square has a piece
+      const piece = game.get(square);
+      if (piece && piece.color === game.turn()) {
+        // Select the piece and show legal moves
+        setSelectedSquare(square);
+        const moves = game.moves({ square, verbose: true });
+        setLegalMoves(moves.map(move => move.to as Square));
+      }
+    }
+  }, [selectedSquare, game, handlePieceDrop]);
 
   // Create custom square styles for highlighting
   const customSquareStyles = React.useMemo(() => {
@@ -103,13 +98,23 @@ const ChessBoard: React.FC<ChessBoardProps> = ({
       <Chessboard
         options={{
           position: game.fen(),
-          onPieceDrop: handlePieceDrop,
-          onSquareClick: handleSquareClick,
-          boardOrientation: boardOrientation,
+          onSquareClick: (params: { square: string }) => {
+            handleSquareClick(params.square as Square);
+          },
+          onPieceDrop: (params: { sourceSquare: string, targetSquare: string | null }) => {
+            if (!params.targetSquare) return false;
+            return handlePieceDrop(params.sourceSquare as Square, params.targetSquare as Square);
+          },
           squareStyles: customSquareStyles,
+          boardOrientation: boardOrientation,
+          animationDurationInMs: 200,
           showNotation: true,
-          boardStyle: { borderRadius: '8px' },
-          animationDurationInMs: 200
+          boardStyle: { 
+            borderRadius: '8px',
+            boxShadow: '0 5px 15px rgba(0, 0, 0, 0.2)'
+          },
+          darkSquareStyle: { backgroundColor: '#779952' },
+          lightSquareStyle: { backgroundColor: '#edeed1' }
         }}
       />
     </div>

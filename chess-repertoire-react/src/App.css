@@ -219,7 +219,7 @@ body {
   background-color: #f8f9fa;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .no-moves {
@@ -229,21 +229,49 @@ body {
 }
 
 .move-group {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   padding: 0.25rem;
   border-radius: 4px;
+  margin-right: 0.5rem;
   margin-bottom: 0.25rem;
   background-color: #f8f9fa;
   line-height: 1.6;
 }
 
 .move-group.variation {
-  background-color: #f0f7ff;
-  border-left: 3px solid #3498db;
-  margin-left: 0.5rem;
+  background-color: transparent;
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.variation-container {
+  position: relative;
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  border-left: 2px solid #ccc;
+}
+
+.variation-content {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0.25rem 0;
+}
+
+.variation-label {
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
   padding-left: 0.5rem;
+}
+
+.variation-title {
+  margin-left: 0.5rem;
+  font-style: italic;
+  color: #3498db;
 }
 
 .move-number-label {

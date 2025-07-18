@@ -6,6 +6,9 @@ interface Move {
   comment?: string;
   moveNumber?: number;
   isWhite?: boolean;
+  variation?: Move[]; // For storing variations
+  variationTitle?: string; // For naming variations (e.g., "Queen's Gambit Accepted")
+  originalIndex?: number; // For tracking the original index in the array
 }
 
 interface MoveHistoryProps {
@@ -19,44 +22,57 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
   currentMoveIndex,
   onMoveClick
 }) => {
-  // Process moves into a proper PGN-style display with move pairs
-  const renderMoveList = () => {
-    if (moves.length === 0) {
-      return <p className="no-moves">No moves yet. Start playing!</p>;
+  // Process moves into a proper PGN-style display with move pairs and variations
+  const renderMoveList = (movesToRender = moves, isVariation = false, depth = 0) => {
+    if (movesToRender.length === 0) {
+      return isVariation ? null : <p className="no-moves">No moves yet. Start playing!</p>;
     }
 
-    // Check if we have any moves to process
-    
     // Process all moves and ensure we have consistent isWhite values
-    const normalizedMoves = moves.map((move, index) => {
+    const normalizedMoves = movesToRender.map((move, index) => {
       // Use the explicitly provided isWhite if available, otherwise calculate based on index
       let isWhite = move.isWhite !== undefined ? move.isWhite : index % 2 === 0;
       
       return {
         ...move,
         isWhite,
-        originalIndex: index  // Keep track of original index for onClick
+        originalIndex: move.originalIndex !== undefined ? move.originalIndex : index
       };
     });
 
-    // Build move groupings based on the actual move sequence
-    // This will ensure that White and Black moves are properly paired together in standard chess notation
-    // For the Queens Gambit, we want:
-    // 1. d4 d5
-    // 2. c4 dxc4
-    // Instead of what we're seeing:
-    // 1. d4 d5
-    // 2. c4
-    // 3. ... dxc4
+    // Group moves by main line and variations
+    const mainLine: (Move & { originalIndex: number })[] = [];
+    const variations: { startIndex: number; moves: (Move & { originalIndex: number })[]; title?: string }[] = [];
     
+    // Extract variations from the moves
+    normalizedMoves.forEach(move => {
+      if (move.variation && move.variation.length > 0) {
+        // Add this move to main line
+        mainLine.push(move);
+        
+        // Store the variation with its starting index
+        variations.push({
+          startIndex: mainLine.length - 1,
+          moves: move.variation.map((varMove, idx) => ({
+            ...varMove,
+            originalIndex: varMove.originalIndex !== undefined ? varMove.originalIndex : -1, // -1 indicates variation move
+            isWhite: varMove.isWhite !== undefined ? varMove.isWhite : idx % 2 === (move.isWhite ? 0 : 1)
+          })),
+          title: move.variationTitle
+        });
+      } else {
+        mainLine.push(move);
+      }
+    });
+    
+    // Build move groupings for the main line
     const movesByNumber: { [key: number]: { white?: Move & { originalIndex: number }, black?: Move & { originalIndex: number } } } = {};
     
     // Determine the correct move number for each half-move
     let currentMoveNumber = 1;
-    let expectingWhite = true;
     
-    for (let i = 0; i < normalizedMoves.length; i++) {
-      const move = normalizedMoves[i];
+    for (let i = 0; i < mainLine.length; i++) {
+      const move = mainLine[i];
       const isWhiteMove = move.isWhite;
       
       // Initialize the move number entry if it doesn't exist
@@ -66,21 +82,21 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
       
       // Add the move to the correct color slot
       if (isWhiteMove) {
-        movesByNumber[currentMoveNumber].white = move as Move & { originalIndex: number };
-        expectingWhite = false; // Next move should be Black's
+        movesByNumber[currentMoveNumber].white = move;
+        // Next move should be Black's
       } else {
-        movesByNumber[currentMoveNumber].black = move as Move & { originalIndex: number };
+        movesByNumber[currentMoveNumber].black = move;
         currentMoveNumber++; // Increment move number after Black's move
-        expectingWhite = true; // Next move should be White's
+        // Next move should be White's
       }
     }
 
-    // Create move pairs with correct numbering and notation
-    return Object.entries(movesByNumber).map(([moveNum, pair]) => {
+    // Create the move list with variations
+    const moveGroups = Object.entries(movesByNumber).map(([moveNum, pair]) => {
       const moveNumber = parseInt(moveNum);
       
       return (
-        <div key={`move-${moveNumber}`} className="move-group">
+        <div key={`move-${moveNumber}-${depth}`} className={`move-group ${isVariation ? 'variation' : ''}`}>
           {/* Always show the move number */}
           <span className="move-number-label">{moveNumber}.</span>
           
@@ -91,27 +107,68 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
           {pair.black && (
             <>
               {!pair.white && (
-                // For Black's move without a preceding White move in the same number,
-                // we need to show the ellipsis after the move number (1...)
                 <span className="move-ellipsis">...</span>
               )}
               {renderMoveItem(pair.black, pair.black.originalIndex)}
             </>
           )}
+          
+          {/* Add variation title if available */}
+          {!isVariation && pair.black?.variationTitle && (
+            <span className="variation-title">{pair.black.variationTitle}</span>
+          )}
+          {!isVariation && pair.white?.variationTitle && (
+            <span className="variation-title">{pair.white.variationTitle}</span>
+          )}
         </div>
       );
     });
+
+    // Add variations to the result
+    const result = [];
+    let lastVariationEnd = -1;
+    
+    // Add main line moves and variations in order
+    variations.forEach((variation, idx) => {
+      // Add moves from main line up to this variation
+      for (let i = lastVariationEnd + 1; i <= variation.startIndex; i++) {
+        if (i < moveGroups.length) {
+          result.push(moveGroups[i]);
+        }
+      }
+      
+      // Update the lastVariationEnd
+      lastVariationEnd = variation.startIndex;
+      
+      // Add the variation
+      result.push(
+        <div key={`variation-${idx}-${depth}`} className="variation-container">
+          {variation.title && <div className="variation-label">{variation.title}</div>}
+          <div className="variation-content">
+            {renderMoveList(variation.moves, true, depth + 1)}
+          </div>
+        </div>
+      );
+    });
+    
+    // Add any remaining main line moves
+    for (let i = lastVariationEnd + 1; i < moveGroups.length; i++) {
+      result.push(moveGroups[i]);
+    }
+    
+    return result;
   };
   
   // Render an individual move item
   const renderMoveItem = (move: Move & { originalIndex: number }, index: number) => {
     const isCurrentMove = index === currentMoveIndex;
     const colorClass = move.isWhite ? 'white-move' : 'black-move';
+    const isVariationMove = index < 0; // Negative index indicates a variation move
     
     return (
       <span
         className={`move-item ${colorClass} ${isCurrentMove ? 'current-move' : ''}`}
-        onClick={() => onMoveClick(index)}
+        onClick={() => !isVariationMove && onMoveClick(index)}
         title={move.comment || ''}
       >
         <span className="move-san">{move.san}</span>

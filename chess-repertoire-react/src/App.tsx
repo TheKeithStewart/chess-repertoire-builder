@@ -5,7 +5,7 @@ import GameControls from './components/GameControls';
 import GameMetadataPanel, { type GameMetadata } from './components/GameMetadataPanel';
 import MoveHistory, { type Move } from './components/MoveHistory';
 import CommentPanel from './components/CommentPanel';
-import { PGNProcessor } from './utils/pgnProcessor';
+import { PGNProcessor, type PGNMove } from './utils/pgnProcessor';
 import './App.css';
 
 interface GameState {
@@ -78,6 +78,48 @@ const App: React.FC = () => {
     setCurrentPositionComment('');
   }, []);
 
+  // Convert PGN moves to Move history with variations
+  const convertPGNMovesToHistory = useCallback((pgnMoves: PGNMove[]): Move[] => {
+    const moves: Move[] = [];
+    
+    for (let i = 0; i < pgnMoves.length; i++) {
+      const pgnMove = pgnMoves[i];
+      const move: Move = {
+        move: '', // We'll calculate this when we replay moves
+        san: pgnMove.san,
+        moveNumber: Math.ceil((i + 1) / 2),
+        isWhite: i % 2 === 0,
+        comment: pgnMove.comment,
+        originalIndex: i
+      };
+      
+      // Add variations if they exist
+      if (pgnMove.variations && pgnMove.variations.length > 0) {
+        move.variation = [];
+        
+        // Process each variation
+        for (const variation of pgnMove.variations) {
+          for (let j = 0; j < variation.length; j++) {
+            const varMove = variation[j];
+            const variationMove: Move = {
+              move: '',
+              san: varMove.san,
+              moveNumber: Math.ceil((j + 1) / 2),
+              isWhite: j % 2 === (i % 2), // Continue from parent move color
+              comment: varMove.comment,
+              originalIndex: -1 // Mark as variation move
+            };
+            move.variation.push(variationMove);
+          }
+        }
+      }
+      
+      moves.push(move);
+    }
+    
+    return moves;
+  }, []);
+
   const handleLoadPGN = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -88,22 +130,33 @@ const App: React.FC = () => {
         
         if (parsedGame) {
           const newGame = new Chess();
+          
+          // Convert PGN moves to our Move structure
+          const convertedMoves = convertPGNMovesToHistory(parsedGame.moves);
           const newMoveHistory: Move[] = [];
           const newComments: { [moveIndex: number]: string } = {};
           
-          // Replay moves
-          for (let i = 0; i < parsedGame.moves.length; i++) {
-            const moveObj = newGame.move(parsedGame.moves[i]);
-            if (moveObj) {
-              newMoveHistory.push({
-                move: moveObj.from + moveObj.to,
-                san: moveObj.san,
-                moveNumber: Math.ceil((i + 1) / 2),
-                isWhite: i % 2 === 0
-              });
-              
-              if (parsedGame.comments[i]) {
-                newComments[i] = parsedGame.comments[i];
+          // Replay main line moves only to build game state
+          let moveIndex = 0;
+          for (const move of convertedMoves) {
+            if (move.originalIndex !== -1) { // Only main line moves
+              try {
+                const moveObj = newGame.move(move.san);
+                if (moveObj) {
+                  const updatedMove: Move = {
+                    ...move,
+                    move: moveObj.from + moveObj.to,
+                    originalIndex: moveIndex
+                  };
+                  newMoveHistory.push(updatedMove);
+                  
+                  if (move.comment) {
+                    newComments[moveIndex] = move.comment;
+                  }
+                  moveIndex++;
+                }
+              } catch (e) {
+                console.error('Error replaying move:', move.san, e);
               }
             }
           }
@@ -130,7 +183,7 @@ const App: React.FC = () => {
       };
       reader.readAsText(file);
     }
-  }, []);
+  }, [convertPGNMovesToHistory]);
 
   const handleSavePGN = useCallback(() => {
     const moves = gameState.moveHistory.map(move => move.san);

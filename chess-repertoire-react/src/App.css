@@ -217,6 +217,9 @@ body {
   border-radius: 4px;
   padding: 0.5rem;
   background-color: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .no-moves {
@@ -225,19 +228,55 @@ body {
   font-style: italic;
 }
 
-.move-item {
+.move-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0.25rem;
+  border-radius: 4px;
+  margin-bottom: 0.25rem;
+  background-color: #f8f9fa;
+  line-height: 1.6;
+}
+
+.move-group.variation {
+  background-color: #f0f7ff;
+  border-left: 3px solid #3498db;
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+.move-number-label {
+  font-weight: bold;
+  color: #777;
+  margin-right: 0.25rem;
+  min-width: 1.5rem;
   display: inline-block;
+}
+
+.move-ellipsis {
+  margin-right: 0.25rem;
+  color: #777;
+  display: inline-block;
+}
+
+.move-item {
+  display: inline-flex;
+  align-items: center;
   margin: 0.25rem;
   padding: 0.25rem 0.5rem;
-  background-color: #ecf0f1;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s;
   font-family: 'Courier New', monospace;
 }
 
-.move-item:hover {
-  background-color: #d5dbdb;
+.move-item.white-move {
+  background-color: #f0f0f0;
+}
+
+.move-item.black-move {
+  background-color: #e0e0e0;
 }
 
 .move-item.current-move {
@@ -245,18 +284,14 @@ body {
   color: white;
 }
 
-.move-number {
-  font-weight: bold;
-  margin-right: 0.25rem;
-}
-
 .move-san {
-  font-weight: bold;
+  font-weight: 500;
 }
 
 .move-comment-indicator {
-  margin-left: 0.25rem;
-  font-size: 0.8rem;
+  margin-left: 4px;
+  opacity: 0.6;
+  font-size: 0.9em;
 }
 
 /* Comment Panel */

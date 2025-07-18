@@ -31,11 +31,11 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
     // Group moves by move number for main line display
     const movesByNumber: { [key: number]: { white?: Move, black?: Move } } = {};
     
-    // Process only main line moves for grouping
-    const mainLineMoves = movesToRender.filter(move => move.originalIndex !== -1);
+    // Process moves for display
+    const movesToProcess = isVariation ? movesToRender : movesToRender.filter(move => move.originalIndex !== -1);
     
-    for (let i = 0; i < mainLineMoves.length; i++) {
-      const move = mainLineMoves[i];
+    for (let i = 0; i < movesToProcess.length; i++) {
+      const move = movesToProcess[i];
       const moveNumber = Math.ceil((i + 1) / 2);
       
       if (!movesByNumber[moveNumber]) {
@@ -101,14 +101,14 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
   
   // Render an individual move item
   const renderMoveItem = (move: Move, index: number) => {
-    const isCurrentMove = index === currentMoveIndex;
+    const isCurrentMove = index >= 0 && index === currentMoveIndex;
     const colorClass = move.isWhite ? 'white-move' : 'black-move';
     const isVariationMove = index < 0; // Negative index indicates a variation move
     
     return (
       <span
         className={`move-item ${colorClass} ${isCurrentMove ? 'current-move' : ''}`}
-        onClick={() => !isVariationMove && onMoveClick(index)}
+        onClick={() => !isVariationMove && index >= 0 && onMoveClick(index)}
         title={move.comment || ''}
       >
         <span className="move-san">{move.san}</span>

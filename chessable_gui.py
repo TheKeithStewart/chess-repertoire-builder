@@ -365,7 +365,9 @@ class ChessboardGUI(tk.Frame):
             turn = "White" if self.board.turn == chess.WHITE else "Black"
             move_number = (self.board.fullmove_number if self.board.turn == chess.BLACK 
                            else self.board.fullmove_number)
-            status_text = f"{turn} to move. Move: {move_number}. "
+            # Get the current chapter name
+            current_chapter = self.get_current_chapter_name()
+            status_text = f"{turn} to move. Move: {move_number}. Chapter: {current_chapter} "
             
             # Add evaluation if available
             if self.analysis_running and hasattr(self, 'engine_info_var'):
@@ -934,10 +936,82 @@ class ChessboardGUI(tk.Frame):
             self.variation_tree._update_button_highlights(self.current_node)
             self.variation_tree._scroll_to_current_move()
             
+            # Update status bar with current position and chapter info
+            turn = "White" if self.board.turn == chess.WHITE else "Black"
+            move_number = (self.board.fullmove_number if self.board.turn == chess.BLACK 
+                          else self.board.fullmove_number)
+            current_chapter = self.get_current_chapter_name()
+            status_text = f"{turn} to move. Move: {move_number}. Chapter: {current_chapter} "
+            
+            # Add evaluation if available
+            if self.analysis_running and hasattr(self, 'engine_info_var'):
+                engine_info = self.engine_info_var.get()
+                if "Score:" in engine_info:
+                    status_text += f"{engine_info.split('Score:')[1].strip().split()[0]} "
+                    
+            # Add keyboard shortcuts reminder
+            status_text += "| ← → (navigate), Home/End, F (flip), E (analysis)"
+            self.status_var.set(status_text)
+            
         except Exception as e:
             print(f"Error updating board minimally: {str(e)}")
             # Fall back to full update if there's an error
             self.update_board()
+
+    def get_current_chapter_name(self):
+        """Determine the chapter name for the current node position."""
+        # Default to the main chapter name
+        chapter_name = self.chapter_var.get()
+        
+        # If we're at the root, return the default chapter name
+        if self.current_node == self.game:
+            return chapter_name
+            
+        # Check if we're in a variation that isn't the main line
+        node = self.current_node
+        parent = node.parent
+        
+        # Traverse up to find where this variation branches from the main line
+        while parent and node in parent.variations and parent.variations[0] == node:
+            node = parent
+            parent = node.parent
+            
+        # If we found a branch point, use it to identify the chapter
+        if parent and node in parent.variations and parent.variations[0] != node:
+            # We're in a variation that isn't the main line
+            variation_index = parent.variations.index(node)
+            
+            # Get move number and move
+            board = chess.Board()
+            moves_to_parent = []
+            temp = parent
+            while temp.parent:
+                moves_to_parent.append(temp.move)
+                temp = temp.parent
+                
+            # Apply moves in reverse order to get to the parent position
+            for move in reversed(moves_to_parent):
+                board.push(move)
+                
+            # Get the move that starts this variation
+            variation_move = node.move
+            move_san = board.san(variation_move)
+            
+            # Create a descriptive chapter name
+            move_number = f"{board.fullmove_number}{'.' if board.turn == chess.WHITE else '...'}"
+            
+            # Check for any comment on this node that might describe the variation
+            description = ""
+            if node.comment:
+                # Limit comment length for display
+                description = node.comment.split(".")[0].strip()  # Take first sentence only
+                if len(description) > 30:
+                    description = description[:27] + "..."
+                description = f" - {description}"
+                
+            return f"Variation {move_number} {move_san}{description}"
+            
+        return chapter_name
 
 class MoveButton(tk.Button):
     """A button representing a chess move."""

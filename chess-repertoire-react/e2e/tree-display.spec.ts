@@ -29,7 +29,7 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
 1. e4 e5 (1... c5 {Sicilian Defense} 2. Nf3 d6) 2. Nf3 Nc6 3. Bb5 *`;
 
     // Write the test PGN to a temporary file
-    const tempPGNPath = join(process.cwd(), 'test-variation.pgn');
+    const tempPGNPath = join(process.cwd(), 'test-files/test-variation.pgn');
     writeFileSync(tempPGNPath, testPGN);
 
     // Load the PGN file
@@ -78,7 +78,7 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
 
 1. e4 e5 2. Nf3 *`;
 
-    const tempPGNPath = join(process.cwd(), 'test-highlight.pgn');
+    const tempPGNPath = join(process.cwd(), 'test-files/test-highlight.pgn');
     writeFileSync(tempPGNPath, simplePGN);
 
     await page.locator('input[type="file"]').setInputFiles(tempPGNPath);
@@ -123,7 +123,7 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
 
 1. d4 d5 2. c4 dxc4 *`;
 
-    const tempPGNPath = join(process.cwd(), 'test-click.pgn');
+    const tempPGNPath = join(process.cwd(), 'test-files/test-click.pgn');
     writeFileSync(tempPGNPath, clickTestPGN);
 
     await page.locator('input[type="file"]').setInputFiles(tempPGNPath);
@@ -162,7 +162,7 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
 
 1. e4 e5 (1... c5 2. Nf3 (2. Nc3 d6) 2... d6) 2. Nf3 *`;
 
-    const tempPGNPath = join(process.cwd(), 'test-nested.pgn');
+    const tempPGNPath = join(process.cwd(), 'test-files/test-nested.pgn');
     writeFileSync(tempPGNPath, nestedPGN);
 
     await page.locator('input[type="file"]').setInputFiles(tempPGNPath);

@@ -32,7 +32,7 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
     const mainLineMoves = movesToRender.filter(move => move.originalIndex !== -1);
     
     // Track the current position in the main line for variations
-    let currentMainLineIndex = 0;
+    // let currentMainLineIndex = 0; // TODO: Use for complex variation tracking
     
     // Process main line moves and their variations
     for (let i = 0; i < mainLineMoves.length; i++) {
@@ -75,7 +75,7 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
   };
 
   // Render variations in tree format with |- prefix
-  const renderVariation = (variation: Move[], parentMove: string, depth: number) => {
+  const renderVariation = (variation: Move[], _parentMove: string, depth: number) => {
     if (!variation || variation.length === 0) return null;
 
     const variationMoves = [];

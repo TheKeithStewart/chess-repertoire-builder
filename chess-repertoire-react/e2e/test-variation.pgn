@@ -1,0 +1,8 @@
+[Event "Tree Display Test"]
+[Site "Chess Repertoire Builder"]
+[Date "2024.01.01"]
+[White "White Player"]
+[Black "Black Player"]
+[Result "*"]
+
+1. e4 e5 (1... c5 {Sicilian Defense} 2. Nf3 d6) 2. Nf3 Nc6 3. Bb5 *

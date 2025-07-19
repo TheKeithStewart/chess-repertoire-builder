@@ -1,0 +1,8 @@
+[Event "Nested Variations Test"]
+[Site "Chess Repertoire Builder"]  
+[Date "2024.01.01"]
+[White "White"]
+[Black "Black"]
+[Result "*"]
+
+1. e4 e5 (1... c5 2. Nf3 (2. Nc3 d6) 2... d6) 2. Nf3 *

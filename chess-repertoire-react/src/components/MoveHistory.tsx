@@ -22,81 +22,102 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
   currentMoveIndex,
   onMoveClick
 }) => {
-  // Process moves into a proper PGN-style display with move pairs and variations
-  const renderMoveList = (movesToRender = moves, isVariation = false, depth = 0) => {
+  // Process moves into a tree-like display format
+  const renderMoveSequence = (movesToRender = moves, depth = 0) => {
     if (movesToRender.length === 0) {
-      return isVariation ? null : <p className="no-moves">No moves yet. Start playing!</p>;
-    }
-
-    // Group moves by move number for main line display
-    const movesByNumber: { [key: number]: { white?: Move, black?: Move } } = {};
-    
-    // Process moves for display
-    const movesToProcess = isVariation ? movesToRender : movesToRender.filter(move => move.originalIndex !== -1);
-    
-    for (let i = 0; i < movesToProcess.length; i++) {
-      const move = movesToProcess[i];
-      const moveNumber = Math.ceil((i + 1) / 2);
-      
-      if (!movesByNumber[moveNumber]) {
-        movesByNumber[moveNumber] = {};
-      }
-      
-      if (i % 2 === 0) {
-        movesByNumber[moveNumber].white = move;
-      } else {
-        movesByNumber[moveNumber].black = move;
-      }
+      return depth === 0 ? <p className="no-moves">No moves yet. Start playing!</p> : null;
     }
 
     const result = [];
-    const moveNumbers = Object.keys(movesByNumber).map(Number).sort((a, b) => a - b);
+    const mainLineMoves = movesToRender.filter(move => move.originalIndex !== -1);
     
-    for (const moveNumber of moveNumbers) {
-      const pair = movesByNumber[moveNumber];
+    // Track the current position in the main line for variations
+    let currentMainLineIndex = 0;
+    
+    // Process main line moves and their variations
+    for (let i = 0; i < mainLineMoves.length; i++) {
+      const move = mainLineMoves[i];
+      const moveNumber = Math.ceil((i + 1) / 2);
+      const isWhite = i % 2 === 0;
       
-      // Main line move pair
-      result.push(
-        <div key={`move-pair-${moveNumber}-${depth}`} className={`move-pair ${isVariation ? 'variation-move-pair' : 'main-line-move-pair'}`}>
-          <span className="move-number-label">{moveNumber}.</span>
-          
-          {/* White's move */}
-          {pair.white && (
-            <>
-              {renderMoveItem(pair.white, pair.white.originalIndex ?? -1)}
-              {/* Render variations after White's move */}
-              {pair.white.variation && pair.white.variation.length > 0 && (
-                <div className="variation-container" style={{ marginLeft: `${(depth + 1) * 1.5}rem` }}>
-                  <div className="variation-label">Variation after {pair.white.san}:</div>
-                  <div className="variation-content">
-                    {renderMoveList(pair.white.variation, true, depth + 1)}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          
-          {/* Black's move */}
-          {pair.black && (
-            <>
-              {!pair.white && <span className="move-ellipsis">...</span>}
-              {renderMoveItem(pair.black, pair.black.originalIndex ?? -1)}
-              {/* Render variations after Black's move */}
-              {pair.black.variation && pair.black.variation.length > 0 && (
-                <div className="variation-container" style={{ marginLeft: `${(depth + 1) * 1.5}rem` }}>
-                  <div className="variation-label">Variation after {pair.black.san}:</div>
-                  <div className="variation-content">
-                    {renderMoveList(pair.black.variation, true, depth + 1)}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      );
+      // Add main line move
+      if (isWhite) {
+        // Start a new move pair
+        result.push(
+          <span key={`move-${i}-${depth}`} className="move-sequence">
+            <span className="move-number-label">{moveNumber}.</span>
+            {renderMoveItem(move, move.originalIndex ?? -1)}
+            {/* Add a space after white's move */}
+            {' '}
+          </span>
+        );
+      } else {
+        // Add black's move inline
+        result.push(
+          <span key={`move-${i}-${depth}`} className="move-sequence">
+            {renderMoveItem(move, move.originalIndex ?? -1)}
+            {i < mainLineMoves.length - 1 ? ' ' : ''}
+          </span>
+        );
+      }
+      
+      // Check for variations after this move
+      if (move.variation && move.variation.length > 0) {
+        result.push(
+          <div key={`variations-${i}-${depth}`} className="variation-block">
+            {renderVariation(move.variation, move.san, depth + 1)}
+          </div>
+        );
+      }
     }
     
-    return result;
+    return <div className={`move-line ${depth === 0 ? 'main-line' : 'variation-line'}`}>{result}</div>;
+  };
+
+  // Render variations in tree format with |- prefix
+  const renderVariation = (variation: Move[], parentMove: string, depth: number) => {
+    if (!variation || variation.length === 0) return null;
+
+    const variationMoves = [];
+    
+    for (let i = 0; i < variation.length; i++) {
+      const move = variation[i];
+      const moveNumber = Math.ceil((i + 1) / 2);
+      const isWhite = i % 2 === 0;
+      
+      if (isWhite) {
+        variationMoves.push(
+          <span key={`var-move-${i}-${depth}`} className="move-sequence">
+            <span className="move-number-label">{moveNumber}.</span>
+            {renderMoveItem(move, move.originalIndex ?? -1)}
+            {' '}
+          </span>
+        );
+      } else {
+        variationMoves.push(
+          <span key={`var-move-${i}-${depth}`} className="move-sequence">
+            {renderMoveItem(move, move.originalIndex ?? -1)}
+            {i < variation.length - 1 ? ' ' : ''}
+          </span>
+        );
+      }
+    }
+
+    return (
+      <div 
+        className="variation-line" 
+        style={{ 
+          marginLeft: `${depth * 1.5}rem`,
+          borderLeft: `2px solid #3498db`,
+          paddingLeft: '0.5rem',
+          marginTop: '0.25rem',
+          marginBottom: '0.25rem'
+        }}
+      >
+        <span className="variation-prefix">|- </span>
+        {variationMoves}
+      </div>
+    );
   };
   
   // Render an individual move item
@@ -121,7 +142,7 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
     <div className="move-history">
       <h3>Move History</h3>
       <div className="move-list">
-        {renderMoveList()}
+        {renderMoveSequence()}
       </div>
     </div>
   );

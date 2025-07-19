@@ -61,8 +61,8 @@ describe('MoveHistory Component', () => {
     expect(screen.getByText('c5')).toBeInTheDocument();
     expect(screen.getByText('dxc5')).toBeInTheDocument();
     
-    // Check for variation label
-    expect(screen.getByText(/Variation after/)).toBeInTheDocument();
+    // Check for variation prefix (tree-like display)
+    expect(screen.getByText('|-')).toBeInTheDocument();
   });
 
   // Test click handler

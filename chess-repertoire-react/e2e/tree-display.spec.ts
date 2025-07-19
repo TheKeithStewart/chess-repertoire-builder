@@ -46,14 +46,14 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
     await expect(page.locator('text=Nf3')).toBeVisible();
     await expect(page.locator('text=Nc6')).toBeVisible();
 
-    // Verify variation structure
-    await expect(page.locator('.variation-container')).toBeVisible();
-    await expect(page.locator('.variation-label')).toContainText('Variation after');
+    // Verify variation structure with new tree format
+    await expect(page.locator('.variation-line')).toBeVisible();
+    await expect(page.locator('.variation-prefix')).toContainText('|-');
     
     // Verify variation moves are indented and visually distinct
-    const variationContainer = page.locator('.variation-container').first();
-    await expect(variationContainer).toHaveCSS('margin-left', '24px'); // 1.5rem = 24px
-    await expect(variationContainer).toHaveCSS('border-left', '3px solid rgb(52, 152, 219)');
+    const variationLine = page.locator('.variation-line').first();
+    await expect(variationLine).toHaveCSS('margin-left', '24px'); // 1.5rem = 24px
+    await expect(variationLine).toHaveCSS('border-left', '2px solid rgb(52, 152, 219)');
 
     // Verify variation moves are displayed
     await expect(page.locator('text=c5')).toBeVisible();
@@ -168,15 +168,15 @@ test.describe('Chess Repertoire Builder - Tree Display', () => {
     await page.locator('input[type="file"]').setInputFiles(tempPGNPath);
     await page.waitForSelector('.move-pair', { timeout: 5000 });
 
-    // Verify that variations are present
-    await expect(page.locator('.variation-container')).toHaveCount({ min: 1 });
+    // Verify that variations are present with new tree format
+    await expect(page.locator('.variation-line')).toHaveCount({ min: 1 });
     
-    // Verify variation structure
-    await expect(page.locator('.variation-label')).toBeVisible();
+    // Verify variation structure with tree prefix
+    await expect(page.locator('.variation-prefix')).toBeVisible();
     
     // Verify visual hierarchy with borders and indentation
-    const variationContainers = page.locator('.variation-container');
-    await expect(variationContainers.first()).toHaveCSS('border-left', '3px solid rgb(52, 152, 219)');
+    const variationLines = page.locator('.variation-line');
+    await expect(variationLines.first()).toHaveCSS('border-left', '2px solid rgb(52, 152, 219)');
 
     // Clean up
     const fs = require('fs');

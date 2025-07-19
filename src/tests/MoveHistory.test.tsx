@@ -15,9 +15,9 @@ describe('MoveHistory Component', () => {
   // Test rendering of basic moves
   it('renders a simple move sequence correctly', () => {
     const moves: Move[] = [
-      { move: 'e2e4', san: 'e4', isWhite: true },
-      { move: 'e7e5', san: 'e5', isWhite: false },
-      { move: 'g1f3', san: 'Nf3', isWhite: true }
+      { move: 'e2e4', san: 'e4', isWhite: true, originalIndex: 0 },
+      { move: 'e7e5', san: 'e5', isWhite: false, originalIndex: 1 },
+      { move: 'g1f3', san: 'Nf3', isWhite: true, originalIndex: 2 }
     ];
 
     render(<MoveHistory moves={moves} currentMoveIndex={-1} onMoveClick={() => {}} />);
@@ -32,39 +32,37 @@ describe('MoveHistory Component', () => {
   // Test rendering with variations
   it('renders moves with variations correctly', () => {
     const moves: Move[] = [
-      { move: 'd2d4', san: 'd4', isWhite: true },
+      { move: 'd2d4', san: 'd4', isWhite: true, originalIndex: 0 },
       { 
         move: 'd7d5', 
         san: 'd5', 
         isWhite: false,
+        originalIndex: 1,
         variation: [
-          { move: 'c7c5', san: 'c5', isWhite: false },
-          { move: 'd4c5', san: 'dxc5', isWhite: true }
-        ],
-        variationTitle: "Alternative Response"
+          { move: 'c7c5', san: 'c5', isWhite: false, originalIndex: -1 },
+          { move: 'd4c5', san: 'dxc5', isWhite: true, originalIndex: -1 }
+        ]
       },
-      { move: 'c2c4', san: 'c4', isWhite: true, variationTitle: "Queen's Gambit" },
-      { move: 'd5c4', san: 'dxc4', isWhite: false }
+      { move: 'c2c4', san: 'c4', isWhite: true, originalIndex: 2 },
+      { move: 'd5c4', san: 'dxc4', isWhite: false, originalIndex: 3 }
     ];
 
     render(<MoveHistory moves={moves} currentMoveIndex={-1} onMoveClick={() => {}} />);
     
-    // Check main line moves - use getAllByText for elements that might appear multiple times
+    // Check main line moves
     expect(screen.getAllByText('1.').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('d4')).toBeInTheDocument();
     expect(screen.getByText('d5')).toBeInTheDocument();
-    expect(screen.getAllByText('2.').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('2.')).toBeInTheDocument();
     expect(screen.getByText('c4')).toBeInTheDocument();
     expect(screen.getByText('dxc4')).toBeInTheDocument();
     
-    // Check variation - using more specific queries
-    // Check for variation title in main line
-    expect(screen.getByText('Alternative Response', { selector: '.variation-title' })).toBeInTheDocument();
-    // Check for variation label in variation section
-    expect(screen.getByText('Alternative Response', { selector: '.variation-label' })).toBeInTheDocument();
-    // Check for moves in variation
+    // Check that variation moves are present
     expect(screen.getByText('c5')).toBeInTheDocument();
-    expect(screen.getByText("Queen's Gambit")).toBeInTheDocument();
+    expect(screen.getByText('dxc5')).toBeInTheDocument();
+    
+    // Check for variation prefix (tree-like display)
+    expect(screen.getByText('|-')).toBeInTheDocument();
   });
 
   // Test click handler
@@ -73,8 +71,8 @@ describe('MoveHistory Component', () => {
     const handleMoveClick = vi.fn();
     
     const moves: Move[] = [
-      { move: 'e2e4', san: 'e4', isWhite: true },
-      { move: 'e7e5', san: 'e5', isWhite: false }
+      { move: 'e2e4', san: 'e4', isWhite: true, originalIndex: 0 },
+      { move: 'e7e5', san: 'e5', isWhite: false, originalIndex: 1 }
     ];
 
     render(
@@ -96,8 +94,8 @@ describe('MoveHistory Component', () => {
   // Test current move highlighting
   it('highlights the current move correctly', () => {
     const moves: Move[] = [
-      { move: 'e2e4', san: 'e4', isWhite: true },
-      { move: 'e7e5', san: 'e5', isWhite: false }
+      { move: 'e2e4', san: 'e4', isWhite: true, originalIndex: 0 },
+      { move: 'e7e5', san: 'e5', isWhite: false, originalIndex: 1 }
     ];
 
     render(

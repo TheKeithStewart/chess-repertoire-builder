@@ -1,6 +1,13 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess, type Square } from 'chess.js';
+
+// Expose game instance for testing
+declare global {
+  interface Window {
+    chessBoardGame?: Chess;
+  }
+}
 
 interface ChessBoardProps {
   game: Chess;
@@ -15,6 +22,15 @@ const ChessBoard: React.FC<ChessBoardProps> = ({
 }) => {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalMoves, setLegalMoves] = useState<Square[]>([]);
+
+  // Expose game to window for e2e testing
+  useEffect(() => {
+    window.chessBoardGame = game;
+    
+    return () => {
+      delete window.chessBoardGame;
+    };
+  }, [game]);
 
   // Handle piece drop for drag and drop
   const handlePieceDrop = useCallback((sourceSquare: Square, targetSquare: Square) => {

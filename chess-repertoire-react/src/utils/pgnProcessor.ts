@@ -1,29 +1,32 @@
 import { Chess } from 'chess.js';
 import { type GameMetadata } from '../components/GameMetadataPanel';
 
+export interface PGNMove {
+  san: string;
+  comment?: string;
+  variations?: PGNMove[][];
+}
+
 export interface PGNGame {
   headers: { [key: string]: string };
-  moves: string[];
+  moves: PGNMove[];
   comments: { [moveIndex: number]: string };
 }
 
 export class PGNProcessor {
   static parsePGN(pgnContent: string): PGNGame | null {
     try {
-      const game = new Chess();
       const lines = pgnContent.split('\n');
       const headers: { [key: string]: string } = {};
-      const moves: string[] = [];
-      const comments: { [moveIndex: number]: string } = {};
       
       let inHeaders = true;
       let gameContent = '';
       
+      // Parse headers first
       for (const line of lines) {
         const trimmedLine = line.trim();
         
         if (trimmedLine.startsWith('[') && trimmedLine.endsWith(']')) {
-          // Parse header
           const headerMatch = trimmedLine.match(/\[(\w+)\s+"(.*)"\]/);
           if (headerMatch) {
             headers[headerMatch[1]] = headerMatch[2];
@@ -35,45 +38,191 @@ export class PGNProcessor {
         }
       }
       
-      // Parse moves from game content
-      const tokens = gameContent.split(/\s+/).filter(token => token.length > 0);
-      let moveIndex = 0;
+      // Parse moves with variations
+      const parsedMoves = this.parseMovesWithVariations(gameContent);
       
-      for (const token of tokens) {
-        // Skip move numbers
-        if (token.match(/^\d+\.+$/)) {
-          continue;
-        }
-        
-        // Check for comments
-        if (token.startsWith('{') && token.endsWith('}')) {
-          const comment = token.slice(1, -1);
-          comments[moveIndex - 1] = comment;
-          continue;
-        }
-        
-        // Skip result indicators
-        if (token === '1-0' || token === '0-1' || token === '1/2-1/2' || token === '*') {
-          continue;
-        }
-        
-        // Try to parse as a move
-        try {
-          const moveObj = game.move(token);
-          if (moveObj) {
-            moves.push(moveObj.san);
-            moveIndex++;
-          }
-        } catch (e) {
-          // Ignore invalid moves
-        }
-      }
-      
-      return { headers, moves, comments };
+      return { 
+        headers, 
+        moves: parsedMoves,
+        comments: {} // We'll handle comments within moves now
+      };
     } catch (error) {
       console.error('Error parsing PGN:', error);
       return null;
     }
+  }
+
+  private static parseMovesWithVariations(gameContent: string): PGNMove[] {
+    const moves: PGNMove[] = [];
+    const tokens = this.tokenizePGN(gameContent);
+    let currentPosition = 0;
+    
+    const game = new Chess();
+    
+    while (currentPosition < tokens.length) {
+      const result = this.parseMove(tokens, currentPosition, game);
+      if (result.move) {
+        moves.push(result.move);
+        currentPosition = result.nextPosition;
+      } else {
+        currentPosition++;
+      }
+    }
+    
+    return moves;
+  }
+
+  private static tokenizePGN(content: string): string[] {
+    // Split on whitespace but keep parentheses and braces as separate tokens
+    const tokens: string[] = [];
+    let current = '';
+    let inComment = false;
+    
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      
+      if (char === '{') {
+        if (current.trim()) {
+          tokens.push(current.trim());
+          current = '';
+        }
+        current = '{';
+        inComment = true;
+      } else if (char === '}' && inComment) {
+        current += '}';
+        tokens.push(current);
+        current = '';
+        inComment = false;
+      } else if (inComment) {
+        current += char;
+      } else if (char === '(' || char === ')') {
+        if (current.trim()) {
+          tokens.push(current.trim());
+          current = '';
+        }
+        tokens.push(char);
+      } else if (/\s/.test(char)) {
+        if (current.trim()) {
+          tokens.push(current.trim());
+          current = '';
+        }
+      } else {
+        current += char;
+      }
+    }
+    
+    if (current.trim()) {
+      tokens.push(current.trim());
+    }
+    
+    return tokens.filter(token => token.length > 0);
+  }
+
+  private static parseMove(tokens: string[], startPos: number, game: Chess): { move: PGNMove | null; nextPosition: number } {
+    let pos = startPos;
+    
+    // Skip move numbers
+    while (pos < tokens.length && tokens[pos].match(/^\d+\.+$/)) {
+      pos++;
+    }
+    
+    if (pos >= tokens.length) {
+      return { move: null, nextPosition: pos };
+    }
+    
+    const token = tokens[pos];
+    
+    // Skip result indicators
+    if (token === '1-0' || token === '0-1' || token === '1/2-1/2' || token === '*') {
+      return { move: null, nextPosition: pos + 1 };
+    }
+    
+    // Handle comments (skip for now, we'll associate them with moves later)
+    if (token.startsWith('{') && token.endsWith('}')) {
+      return { move: null, nextPosition: pos + 1 };
+    }
+    
+    // Handle variations in parentheses
+    if (token === '(') {
+      return { move: null, nextPosition: pos + 1 };
+    }
+    
+    if (token === ')') {
+      return { move: null, nextPosition: pos + 1 };
+    }
+    
+    // Try to parse as a move
+    try {
+      const tempGame = new Chess(game.fen());
+      const moveObj = tempGame.move(token);
+      if (moveObj) {
+        // Create the move and advance the main game state
+        game.move(token);
+        
+        let comment: string | undefined;
+        let variations: PGNMove[][] = [];
+        pos++;
+        
+        // Look for comment immediately after the move
+        if (pos < tokens.length && tokens[pos].startsWith('{') && tokens[pos].endsWith('}')) {
+          comment = tokens[pos].slice(1, -1);
+          pos++;
+        }
+        
+        // Look for variations
+        while (pos < tokens.length && tokens[pos] === '(') {
+          const variationResult = this.parseVariation(tokens, pos, new Chess(game.fen()));
+          if (variationResult.variation.length > 0) {
+            variations.push(variationResult.variation);
+          }
+          pos = variationResult.nextPosition;
+        }
+        
+        const pgnMove: PGNMove = {
+          san: moveObj.san,
+          comment,
+          variations: variations.length > 0 ? variations : undefined
+        };
+        
+        return { move: pgnMove, nextPosition: pos };
+      }
+    } catch (e) {
+      // Invalid move, skip
+    }
+    
+    return { move: null, nextPosition: pos + 1 };
+  }
+
+  private static parseVariation(tokens: string[], startPos: number, game: Chess): { variation: PGNMove[]; nextPosition: number } {
+    const variation: PGNMove[] = [];
+    let pos = startPos;
+    
+    // Skip opening parenthesis
+    if (tokens[pos] === '(') {
+      pos++;
+    }
+    
+    let parenCount = 1;
+    
+    while (pos < tokens.length && parenCount > 0) {
+      const token = tokens[pos];
+      
+      if (token === '(') {
+        parenCount++;
+        pos++;
+      } else if (token === ')') {
+        parenCount--;
+        pos++;
+      } else {
+        const result = this.parseMove(tokens, pos, game);
+        if (result.move) {
+          variation.push(result.move);
+        }
+        pos = result.nextPosition;
+      }
+    }
+    
+    return { variation, nextPosition: pos };
   }
   
   static generatePGN(
@@ -97,7 +246,7 @@ export class PGNProcessor {
     
     let pgn = headers.join('\n') + '\n\n';
     
-    // Add moves with comments
+    // Add moves with comments (keeping backward compatibility for now)
     const game = new Chess();
     for (let i = 0; i < moves.length; i++) {
       const move = moves[i];

@@ -64,7 +64,7 @@ export class PGNProcessor {
             moves.push(moveObj.san);
             moveIndex++;
           }
-        } catch (e) {
+        } catch {
           // Ignore invalid moves
         }
       }

@@ -31,7 +31,7 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
     // Process all moves and ensure we have consistent isWhite values
     const normalizedMoves = movesToRender.map((move, index) => {
       // Use the explicitly provided isWhite if available, otherwise calculate based on index
-      let isWhite = move.isWhite !== undefined ? move.isWhite : index % 2 === 0;
+      const isWhite = move.isWhite !== undefined ? move.isWhite : index % 2 === 0;
       
       return {
         ...move,

@@ -129,8 +129,14 @@ const MoveHistory: React.FC<MoveHistoryProps> = ({
     return (
       <span
         className={`move-item ${colorClass} ${isCurrentMove ? 'current-move' : ''}`}
-        onClick={() => !isVariationMove && index >= 0 && onMoveClick(index)}
+        onClick={() => {
+          if (!isVariationMove && index >= 0) {
+            console.log("Move clicked:", index, move.san);
+            onMoveClick(index);
+          }
+        }}
         title={move.comment || ''}
+        data-testid={`move-${index}`}
       >
         <span className="move-san">{move.san}</span>
         {move.comment && <span className="move-comment-indicator">💭</span>}

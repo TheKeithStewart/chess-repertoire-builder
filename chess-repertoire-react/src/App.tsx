@@ -249,13 +249,25 @@ const App: React.FC = () => {
     (moveIndex: number) => {
       const newGame = new Chess();
 
+      // Ensure valid index
+      if (moveIndex < -1 || moveIndex >= gameState.moveHistory.length) {
+        console.error("Invalid move index:", moveIndex);
+        return;
+      }
+
       // Replay moves up to the selected index
       for (let i = 0; i <= moveIndex; i++) {
         if (gameState.moveHistory[i]) {
-          newGame.move(gameState.moveHistory[i].san);
+          try {
+            newGame.move(gameState.moveHistory[i].san);
+          } catch (e) {
+            console.error("Error applying move:", gameState.moveHistory[i].san, e);
+            break;
+          }
         }
       }
 
+      // Update game state and current move index
       setGameState((prev) => ({
         ...prev,
         game: newGame,
@@ -264,6 +276,12 @@ const App: React.FC = () => {
     },
     [gameState.moveHistory]
   );
+
+  // Update current position comment when current move index changes
+  useEffect(() => {
+    const comment = gameState.comments[gameState.currentMoveIndex] || "";
+    setCurrentPositionComment(comment);
+  }, [gameState.currentMoveIndex, gameState.comments]);
 
   const handleGoBack = useCallback(() => {
     if (gameState.currentMoveIndex >= 0) {
